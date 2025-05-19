@@ -18,18 +18,17 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install dependencies
+    - name: Instalar dependencias
       run: |
         pip install yfinance pandas
 
-    - name: Ejecutar script Actual_Stock.py
+    - name: Ejecutar script de actualización
       run: python Actual_Stock.py
 
     - name: Commit y push cambios
-      uses: stefanzweifel/git-auto-commit-action@v4
+      uses: EndBug/add-and-commit@v9
       with:
-        commit_message: "📈 Actualización diaria automática"
-        file_pattern: "Actual_Stock.csv"
-        branch: main
-        commit_user_name: "github-actions"
-        commit_user_email: "github-actions@github.com"
+        message: "📈 Actualización diaria automática"
+        add: "Actual_Stock.csv"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
