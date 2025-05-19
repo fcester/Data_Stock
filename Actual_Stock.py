@@ -7,26 +7,27 @@ import os
 tickers_df = pd.read_csv("Tickers.csv")
 tickers = tickers_df["ticker"].dropna().tolist()
 
-# Obtener fecha de hoy
-hoy = datetime.today().strftime('%Y-%m-%d')
+# Descargar datos últimos 5 días
+df = yf.download(tickers, period="5d", interval="1d", auto_adjust=True)['Close']
 
-# Descargar datos
-df = yf.download(tickers, start=hoy, end=hoy, auto_adjust=True)['Close']
-df.index = [hoy]
-df = df[tickers]
+# Tomar solo la última fila disponible (último cierre)
+df = df.tail(1)
 
 # Archivo destino
 file_name = "Actual_Stock.csv"
 
-# Si ya existe, agregar nueva fila si es necesario
 if os.path.exists(file_name) and os.path.getsize(file_name) > 0:
     df_existente = pd.read_csv(file_name, index_col=0)
-    if hoy not in df_existente.index:
+
+    # Si la fecha del nuevo dato no está en el archivo, lo agrego
+    fecha_nueva = df.index[0]
+    if fecha_nueva not in df_existente.index:
         df_final = pd.concat([df_existente, df])
         df_final.to_csv(file_name)
         print("📈 Datos actualizados.")
     else:
-        print("✅ Ya existen datos para hoy.")
+        print("✅ Ya existen datos para esa fecha.")
 else:
     df.to_csv(file_name)
     print("📊 Archivo creado.")
+
