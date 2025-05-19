@@ -2,9 +2,8 @@ name: Actualizar datos financieros
 
 on:
   schedule:
-    # Ejecuta todos los días a las 16:00 UTC (ajusta horario si querés)
-    - cron: '0 16 * * *'
-  workflow_dispatch:  # Para poder ejecutarlo manualmente
+    - cron: '0 16 * * *'  # Ejecuta a las 16:00 UTC todos los días
+  workflow_dispatch:
 
 jobs:
   update-stock:
@@ -14,7 +13,7 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
       with:
-        persist-credentials: false  # Necesario para usar token personalizado
+        persist-credentials: false
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -33,6 +32,7 @@ jobs:
       with:
         commit_message: "📈 Actualización diaria automática"
         file_pattern: "Actual_Stock.csv"
-        branch: main  # Cambia si usas otra rama
-        author_name: "github-actions"
-        author_email: "github-actions@github.com"
+        branch: main
+        commit_user_name: "github-actions"
+        commit_user_email: "github-actions@github.com"
+        token: ${{ secrets.GITHUB_TOKEN }}
