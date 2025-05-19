@@ -18,7 +18,7 @@ jobs:
           pip install yfinance pandas
 
       - name: Ejecutar script
-        run: python stock_updater.py
+        run: python Actual_Stock.py
 
       - name: Guardar cambios en CSV
         run: |
