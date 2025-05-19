@@ -1,0 +1,29 @@
+name: Daily Stock Update
+
+on:
+  workflow_dispatch:    # permite correrlo manualmente desde GitHub
+  schedule:
+    - cron: "0 12 * * *"   # corre todos los días a las 9 AM Argentina (12 UTC)
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+
+      - name: Instalar dependencias
+        run: |
+          pip install yfinance pandas
+
+      - name: Ejecutar script
+        run: python stock_updater.py
+
+      - name: Guardar cambios en CSV
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add Actual_Stock.csv
+          git commit -m "📈 Actualización diaria" || echo "Sin cambios"
+          git push
