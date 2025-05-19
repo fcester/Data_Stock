@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 # Leer tickers desde CSV
-tickers_df = pd.read_csv("Tickers.csv", encoding='utf-8', errors='ignore')
+tickers_df = pd.read_csv("Tickers.csv")
 tickers = tickers_df["ticker"].dropna().tolist()
 
 # Descargar datos últimos 5 días
