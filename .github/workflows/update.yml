@@ -1,29 +1,38 @@
-name: Daily Stock Update
+name: Actualizar datos financieros
 
 on:
-  workflow_dispatch:    # permite correrlo manualmente desde GitHub
   schedule:
-    - cron: "0 12 * * *"   # corre todos los días a las 9 AM Argentina (12 UTC)
+    # Ejecuta todos los días a las 16:00 UTC (ajusta horario si querés)
+    - cron: '0 16 * * *'
+  workflow_dispatch:  # Para poder ejecutarlo manualmente
 
 jobs:
-  update:
+  update-stock:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clonar repositorio
-        uses: actions/checkout@v3
+    - name: Checkout repo
+      uses: actions/checkout@v3
+      with:
+        persist-credentials: false  # Necesario para usar token personalizado
 
-      - name: Instalar dependencias
-        run: |
-          pip install yfinance pandas
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
 
-      - name: Ejecutar script
-        run: python Actual_Stock.py
+    - name: Install dependencies
+      run: |
+        pip install yfinance pandas
 
-      - name: Guardar cambios en CSV
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add Actual_Stock.csv
-          git commit -m "📈 Actualización diaria" || echo "Sin cambios"
-          git push
+    - name: Ejecutar script Actual_Stock.py
+      run: python Actual_Stock.py
+
+    - name: Commit y push cambios
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: "📈 Actualización diaria automática"
+        file_pattern: "Actual_Stock.csv"
+        branch: main  # Cambia si usas otra rama
+        author_name: "github-actions"
+        author_email: "github-actions@github.com"
