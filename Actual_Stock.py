@@ -15,7 +15,7 @@ df = yf.download(tickers, period="5d", interval="1d", auto_adjust=True)['Close']
 # Tomar solo la última fila disponible (último cierre)
 df = df.tail(1)
 
----
+
 for ticker_look in tickers_dict:
     ticker_yf = yf.Ticker(ticker_look)
     temp = ticker_yf.info
@@ -33,7 +33,7 @@ for ticker_look in tickers_dict:
     dow_stats[ticker_look] = ticker_info
 
 all_stats_info = pd.concat(dow_stats, keys=dow_stats.keys(), names=['ticker', 'Index'])
----
+
 # Archivo destino
 file_info_name = "Stock_Info.csv"
 file_name = "Actual_Stock.csv"
