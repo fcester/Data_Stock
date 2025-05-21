@@ -38,18 +38,18 @@ file_info_name = "Stock_Info.csv"
 file_name = "Actual_Stock.csv"
 all_stats_info.to_csv(file_info_name)
 
-if os.path.exists(file_name) and os.path.getsize(file_name) > 0:
-    df_existente = pd.read_csv(file_name, index_col=0)
+if not os.path.exists(file_name) or os.stat(file_name).st_size == 0:
+    # Si el archivo no existe o está vacío, guarda df directamente (con índice de fechas)
+    df.to_csv(file_name, index=True)  # El índice de df (fechas) se guardará como la primera columna "Date"
+    print("📊 Archivo creado con datos iniciales.")
+else:  # Si el archivo existe y NO está vacío
+    df_existente = pd.read_csv(file_name, index_col="Date")
+    df_existente.index = pd.to_datetime(df_existente.index)  # Convertir a DateTimeIndex
 
-    # Si la fecha del nuevo dato no está en el archivo, lo agrego
-    fecha_nueva = df.index[0]
+    fecha_nueva = df.index[0]  # Fecha del nuevo dato
     if fecha_nueva not in df_existente.index:
         df_final = pd.concat([df_existente, df])
         df_final.to_csv(file_name)
         print("📈 Datos actualizados.")
     else:
-        print("✅ Ya existen datos para esa fecha.")
-else:
-    df.to_csv(file_name)
-    print("📊 Archivo creado.")
-
+        pass
