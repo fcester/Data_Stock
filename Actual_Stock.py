@@ -13,7 +13,7 @@ df = yf.download(tickers, period="5d", interval="1d", auto_adjust=True)['Close']
 
 # Tomar solo la última fila disponible (último cierre)
 df = df.tail(1)
-
+dow_stats = {}
 
 for ticker_look in tickers_dict:
     ticker_yf = yf.Ticker(ticker_look)
