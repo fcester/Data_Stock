@@ -6,7 +6,7 @@ import os
 # Leer tickers desde CSV
 tickers_df = pd.read_csv("Tickers.csv")
 tickers = tickers_df["ticker"].dropna().tolist()
-tickers_dict = tickers_df["ticker"].dropna().todict()
+tickers_dict = tickers_df["ticker"].dropna().to_dict()
 
 
 # Descargar datos últimos 5 días
