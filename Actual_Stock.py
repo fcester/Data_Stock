@@ -14,7 +14,15 @@ tickers_dict = {str(ticker): True for ticker in tickers_df["ticker"].dropna()}
 # ─────────────────────────────────────────────
 #  2. PRECIOS (últimos 5 días → último cierre)
 # ─────────────────────────────────────────────
-df = yf.download(tickers, period="5d", interval="1d", auto_adjust=True)["Close"]
+raw = yf.download(tickers, period="5d", interval="1d", auto_adjust=True, progress=False)
+df = raw["Close"]
+
+# Si solo hay un ticker yfinance devuelve Serie -> convertir a DataFrame
+if isinstance(df, pd.Series):
+    df = df.to_frame(name=tickers[0])
+
+# Eliminar columnas (tickers) sin ningun dato (delisted, etc.)
+df = df.dropna(axis=1, how="all")
 df = df.tail(1)
 
 file_name = "Actual_Stock.csv"
@@ -101,11 +109,13 @@ all_stats[numeric_cols] = all_stats[numeric_cols].apply(pd.to_numeric, errors="c
 # ─────────────────────────────────────────────
 #  6. COLUMNAS DERIVADAS ÚTILES PARA PBI
 # ─────────────────────────────────────────────
-# Upside potencial según precio objetivo de analistas
-# (requiere precio actual; lo tomamos del último cierre descargado)
-last_prices = df.iloc[-1].rename("lastPrice")
-all_stats = all_stats.merge(last_prices.reset_index().rename(columns={"index": "ticker"}),
-                            on="ticker", how="left")
+# Último precio: df tiene fechas como índice y tickers como columnas
+# → transponemos para obtener un DataFrame con ticker como índice
+last_prices = df.iloc[-1]  # Series: índice = tickers, valores = precios
+last_prices_df = last_prices.reset_index()
+last_prices_df.columns = ["ticker", "lastPrice"]
+
+all_stats = all_stats.merge(last_prices_df, on="ticker", how="left")
 
 all_stats["upsidePotential_pct"] = (
     (all_stats["targetMeanPrice"] - all_stats["lastPrice"]) / all_stats["lastPrice"] * 100
