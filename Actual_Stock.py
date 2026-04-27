@@ -191,6 +191,21 @@ df["rating"] = df["score_FINAL_adj"].apply(label)
 # 13. OUTPUT
 # ─────────────────────────────────────────────
 df.to_csv("Stock_Screener_PRO.csv", index=False)
+# ─────────────────────────────────────────────
+# 14. GUARDAR PRECIOS DE CIERRE → Actual_Stock.csv
+# ─────────────────────────────────────────────
+file_name = "Actual_Stock.csv"
+if not os.path.exists(file_name) or os.stat(file_name).st_size == 0:
+    df.to_csv(file_name, index=True)
+    print("📊 Archivo creado con datos iniciales.")
+else:
+    df_existente = pd.read_csv(file_name, index_col="Date")
+    df_existente.index = pd.to_datetime(df_existente.index)
+    fecha_nueva = prices.index[-1]
+    if fecha_nueva not in df_existente.index:
+        df_final = pd.concat([df_existente, prices.tail(1)])
+        df_final.to_csv(file_name)
+        print("📈 Datos actualizados.")
 
 print("\n🏆 TOP 15")
 print(df.sort_values("rank")[["ticker","score_FINAL_adj","rating","rank"]].head(15))
