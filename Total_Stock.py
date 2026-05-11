@@ -11,7 +11,7 @@ import os
 tickers = pd.read_csv("Tickers.csv")["ticker"].dropna().tolist()
 
 PRICES_FILE      = "Total_Stock.parquet"
-HIST_CSV_FILE    = "Historical_Stock.csv"
+HIST_CSV_FILE    = "Historical_Stock_backup.csv"
 ACTUAL_CSV_FILE  = "Actual_Stock.csv"
 HISTORICAL_FILE  = "stock_fundamentals_history.parquet"
 
