@@ -10,7 +10,7 @@ import os
 # ─────────────────────────────────────────────
 tickers = pd.read_csv("Tickers.csv")["ticker"].dropna().tolist()
 
-PRICES_FILE     = "Total_Stock.parquet"
+PRICES_FILE     = "Actual_Stock.parquet"
 HISTORICAL_FILE = "stock_fundamentals_history.parquet"
 
 HISTORICAL_ATTRIBUTES = [
@@ -325,7 +325,7 @@ df[output_cols].to_csv("Stock_Screener_PRO.csv", index=False)
 print("✅ Stock_Screener_PRO.csv actualizado.")
 
 # ─────────────────────────────────────────────
-# 14. PRECIOS → Total_Stock.parquet
+# 14. PRECIOS → Actual_Stock.parquet
 # ─────────────────────────────────────────────
 
 # ── ELIMINAR ESTE BLOQUE ─────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ if not os.path.exists(PRICES_FILE):
     print("🔄 Parquet no encontrado — iniciando migración...")
     frames_to_merge = []
 
-    for csv_file in ["Historical_Stock_backup_backup.csv", "Actual_Stock.csv"]:
+    for csv_file in ["Historical_Stock_backup.csv", "Actual_Stock.csv"]:
         if os.path.exists(csv_file) and os.stat(csv_file).st_size > 0:
             df_csv = load_csv_prices(csv_file)
             frames_to_merge.append(df_csv)
@@ -387,7 +387,7 @@ if os.path.exists(PRICES_FILE):
         print(f"📈 {len(fechas_nuevas)} fechas nuevas agregadas | "
               f"Total acumulado: {len(df_final)} filas")
     else:
-        print("✅ Total_Stock.parquet ya está al día.")
+        print("✅ Actual_Stock.parquet ya está al día.")
 
 # ─────────────────────────────────────────────
 # 15. RESUMEN CONSOLA
