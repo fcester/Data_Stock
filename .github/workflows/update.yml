@@ -2,7 +2,7 @@ name: Actualizar datos financieros
 
 on:
   schedule:
-    - cron: '0 16 * * *'  # Ejecutar todos los días a las 16:00 UTC
+    - cron: '0 16 * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
 
       - name: Instalar dependencias
         run: |
-          pip install yfinance pandas
+          pip install yfinance pandas numpy scipy pyarrow
 
       - name: Ejecutar script
         run: python Actual_Stock.py
