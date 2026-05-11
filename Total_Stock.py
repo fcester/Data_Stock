@@ -10,10 +10,8 @@ import os
 # ─────────────────────────────────────────────
 tickers = pd.read_csv("Tickers.csv")["ticker"].dropna().tolist()
 
-PRICES_FILE      = "Total_Stock.parquet"
-HIST_CSV_FILE    = "Historical_Stock_backup.csv"
-ACTUAL_CSV_FILE  = "Actual_Stock.csv"
-HISTORICAL_FILE  = "stock_fundamentals_history.parquet"
+PRICES_FILE     = "Total_Stock.parquet"
+HISTORICAL_FILE = "stock_fundamentals_history.parquet"
 
 HISTORICAL_ATTRIBUTES = [
     "shortName", "sector", "industry",
@@ -61,7 +59,7 @@ fetch_date    = datetime.today().strftime("%Y-%m-%d")
 
 for t in tickers:
     try:
-        info   = yf.Ticker(t).info
+        info    = yf.Ticker(t).info
         data[t] = {a: info.get(a) for a in ATTRIBUTES}
 
         report_ts = info.get("mostRecentQuarter")
@@ -79,6 +77,9 @@ for t in tickers:
         print(f"⚠  Error en {t}: {e}")
         continue
 
+# ── ELIMINAR ESTE BLOQUE ──────────────────────────────────────────────────────
+# Este bloque guarda el histórico de fundamentales.
+# Elimínalo una vez que hayas resuelto el problema manualmente.
 if new_hist_rows:
     df_new = pd.DataFrame(new_hist_rows)
     if df_hist.empty:
@@ -92,6 +93,7 @@ if new_hist_rows:
           f"{len(df_updated)} filas totales")
 else:
     print("✅ Histórico sin cambios — no hubo nuevos reportes trimestrales.")
+# ── FIN BLOQUE A ELIMINAR ─────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────
 # 4. DATAFRAME SCREENER
@@ -99,8 +101,8 @@ else:
 df = pd.DataFrame.from_dict(data, orient="index").reset_index()
 df.rename(columns={"index": "ticker"}, inplace=True)
 
-num_cols      = df.select_dtypes(include=np.number).columns
-df[num_cols]  = df[num_cols].apply(pd.to_numeric, errors="coerce")
+num_cols     = df.select_dtypes(include=np.number).columns
+df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
 
 # ─────────────────────────────────────────────
 # 5. FEATURES DE PRECIO
@@ -113,11 +115,6 @@ df["priceVs200dMA"] = df["lastPrice"] / df["twoHundredDayAverage"] - 1
 # 6. KPIs DE EVOLUCIÓN HISTÓRICA
 # ─────────────────────────────────────────────
 def compute_trend(values):
-    """
-    Pendiente de regresión lineal normalizada por la media.
-    Resultado: % de cambio por trimestre.
-    Mínimo 3 puntos para ser estadísticamente válido.
-    """
     values = values.dropna()
     if len(values) < 3:
         return np.nan
@@ -129,10 +126,6 @@ def compute_trend(values):
     return slope / mean_val
 
 def compute_consistency(values):
-    """
-    Estabilidad de resultados vía coeficiente de variación inverso.
-    Mayor valor = beneficios más predecibles = mayor calidad.
-    """
     values = values.dropna()
     if len(values) < 3:
         return np.nan
@@ -150,7 +143,7 @@ if os.path.exists(HISTORICAL_FILE):
     df_fund_hist = pd.read_parquet(HISTORICAL_FILE)
     df_fund_hist["report_date"] = pd.to_datetime(df_fund_hist["report_date"])
     df_fund_hist = df_fund_hist.sort_values(["ticker", "report_date"])
-    df_fund_hist = df_fund_hist.groupby("ticker").tail(8)  # últimos 8 trimestres
+    df_fund_hist = df_fund_hist.groupby("ticker").tail(8)
 
     trend_results = {}
     for ticker, group in df_fund_hist.groupby("ticker"):
@@ -165,15 +158,14 @@ if os.path.exists(HISTORICAL_FILE):
 
     df_trends = pd.DataFrame.from_dict(trend_results, orient="index").reset_index()
     df_trends.rename(columns={"index": "ticker"}, inplace=True)
-    df       = df.merge(df_trends, on="ticker", how="left")
+    df        = df.merge(df_trends, on="ticker", how="left")
 
     n_activos = df_trends[trend_kpis].notna().any(axis=1).sum()
-    print(f"📈 KPIs de evolución calculados para {n_activos} tickers "
-          f"({len(tickers) - n_activos} sin histórico suficiente aún).")
+    print(f"📈 KPIs de evolución calculados para {n_activos} tickers.")
 else:
     for kpi in trend_kpis:
         df[kpi] = np.nan
-    print("⚠  Sin histórico aún — KPIs de evolución en NaN (se activarán tras 3 trimestres).")
+    print("⚠  Sin histórico aún — KPIs de evolución en NaN.")
 
 # ─────────────────────────────────────────────
 # 7. WINSORIZATION + IMPUTACIÓN
@@ -201,14 +193,6 @@ def impute(df, col):
 # ─────────────────────────────────────────────
 # 8. SCORING CONFIG
 # ─────────────────────────────────────────────
-#
-#  Cada categoría: { métrica: (inverse, peso_interno), "weight": peso_global }
-#  inverse=True  → menor valor es mejor (ej: PE bajo es buena valoración)
-#  inverse=False → mayor valor es mejor (ej: ROE alto es mejor rentabilidad)
-#
-#  Los pesos globales suman 1.0:
-#  0.20 + 0.20 + 0.15 + 0.15 + 0.15 + 0.15 = 1.00 ✅
-#
 CONFIG = {
     "valuation": {
         "trailingPE":         (True,  0.25),
@@ -238,14 +222,13 @@ CONFIG = {
         "priceVs200dMA": (False, 0.5),
         "weight": 0.15
     },
-    # ── Activa desde el 3er trimestre de datos históricos ──
     "fundamental_momentum": {
-        "revenue_trend":        (False, 0.25),  # ingresos crecientes = mejor
-        "ebitda_trend":         (False, 0.25),  # EBITDA creciente   = mejor
-        "margin_trend":         (False, 0.20),  # márgenes crecientes = mejor
-        "debt_trend":           (True,  0.15),  # deuda creciente    = peor
-        "fcf_trend":            (False, 0.10),  # FCF creciente      = mejor
-        "earnings_consistency": (False, 0.05),  # más estable        = mejor
+        "revenue_trend":        (False, 0.25),
+        "ebitda_trend":         (False, 0.25),
+        "margin_trend":         (False, 0.20),
+        "debt_trend":           (True,  0.15),
+        "fcf_trend":            (False, 0.10),
+        "earnings_consistency": (False, 0.05),
         "weight": 0.15
     }
 }
@@ -269,9 +252,7 @@ for cat, cfg in CONFIG.items():
     for k, v in cfg.items():
         if k == "weight":
             continue
-
         inverse, w = v
-
         if k in df.columns:
             imp              = impute(df, k)
             s                = df.groupby("sector")[imp.name].transform(
@@ -284,23 +265,8 @@ for cat, cfg in CONFIG.items():
     df[f"score_{cat}"] = cat_score / total_w if total_w > 0 else np.nan
 
 # ─────────────────────────────────────────────
-# 10. SCORE FINAL PONDERADO
+# 10. SCORE FINAL
 # ─────────────────────────────────────────────
-#
-#  score_FINAL = suma ponderada de los 6 score_{cat}
-#
-#  Ejemplo para un activo con todos los datos:
-#  ┌─────────────────────────┬────────┬───────────────────────────────┐
-#  │ Categoría               │ Peso   │ Contribución al score final   │
-#  ├─────────────────────────┼────────┼───────────────────────────────┤
-#  │ valuation               │ 20%    │ score_valuation × 0.20        │
-#  │ profitability           │ 20%    │ score_profitability × 0.20    │
-#  │ growth                  │ 15%    │ score_growth × 0.15           │
-#  │ financial               │ 15%    │ score_financial × 0.15        │
-#  │ momentum                │ 15%    │ score_momentum × 0.15         │
-#  │ fundamental_momentum    │ 15%    │ score_fund_momentum × 0.15    │
-#  └─────────────────────────┴────────┴───────────────────────────────┘
-#
 cat_scores   = []
 total_weight = 0
 
@@ -312,7 +278,7 @@ for cat, cfg in CONFIG.items():
 df["score_FINAL"] = sum(cat_scores) / total_weight
 
 # ─────────────────────────────────────────────
-# 11. PENALIZACIÓN POR DATOS FALTANTES
+# 11. PENALIZACIÓN
 # ─────────────────────────────────────────────
 valid        = df[all_metrics].notna().sum(axis=1)
 total        = len(all_metrics)
@@ -341,33 +307,30 @@ df["rating"] = df["score_FINAL_adj"].apply(label)
 df.drop(columns=["mostRecentQuarter"], inplace=True, errors="ignore")
 
 output_cols = [
-    # Identificación
     "ticker", "shortName", "sector", "industry",
-    # Score final
     "rank", "score_FINAL_adj", "rating",
-    # Scores por categoría
     "score_valuation", "score_profitability", "score_growth",
     "score_financial", "score_momentum", "score_fundamental_momentum",
-    # KPIs de evolución (legibles para análisis manual)
     "revenue_trend", "ebitda_trend", "margin_trend",
     "debt_trend", "fcf_trend", "earnings_consistency",
-    # Precio
     "lastPrice", "priceVs50dMA", "priceVs200dMA",
-    # Fundamentales raw
     "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
     "returnOnEquity", "profitMargins", "operatingMargins",
     "revenueGrowth", "earningsGrowth",
     "debtToEquity", "currentRatio", "freeCashflow",
 ]
 
-# Solo exportar columnas que existan (evita error si alguna falta)
 output_cols = [c for c in output_cols if c in df.columns]
 df[output_cols].to_csv("Stock_Screener_PRO.csv", index=False)
 print("✅ Stock_Screener_PRO.csv actualizado.")
 
 # ─────────────────────────────────────────────
-# 14. GUARDAR PRECIOS → Actual_Stock.parquet
+# 14. PRECIOS → Total_Stock.parquet
 # ─────────────────────────────────────────────
+
+# ── ELIMINAR ESTE BLOQUE ─────────────────────────────────────────────────────
+# Este bloque hace la migración de CSV a Parquet en la primera ejecución.
+# Elimínalo una vez que el parquet ya exista correctamente en el repo.
 def load_csv_prices(filepath):
     df_p = pd.read_csv(filepath, index_col=0)
     df_p.index = pd.to_datetime(df_p.index, utc=False, errors="coerce")
@@ -385,47 +348,34 @@ def merge_price_frames(*frames):
         all_cols = all_cols.union(f.columns)
     return combined.reindex(columns=all_cols).sort_index()
 
-# ── Migración (solo primera ejecución) ──────────────────────────────────────
 if not os.path.exists(PRICES_FILE):
-    print("🔄 Parquet no encontrado — iniciando migración de CSVs históricos...")
+    print("🔄 Parquet no encontrado — iniciando migración...")
     frames_to_merge = []
 
-    if os.path.exists(HIST_CSV_FILE):
-        df_hist_csv = load_csv_prices(HIST_CSV_FILE)
-        frames_to_merge.append(df_hist_csv)
-        print(f"   📂 {HIST_CSV_FILE}: {len(df_hist_csv)} filas | "
-              f"{df_hist_csv.index[0].date()} → {df_hist_csv.index[-1].date()}")
-    else:
-        print(f"   ⚠  {HIST_CSV_FILE} no encontrado — se omite.")
-
-    if os.path.exists(ACTUAL_CSV_FILE) and os.stat(ACTUAL_CSV_FILE).st_size > 0:
-        df_actual_csv = load_csv_prices(ACTUAL_CSV_FILE)
-        frames_to_merge.append(df_actual_csv)
-        print(f"   📂 {ACTUAL_CSV_FILE}: {len(df_actual_csv)} filas | "
-              f"{df_actual_csv.index[0].date()} → {df_actual_csv.index[-1].date()}")
-    else:
-        print(f"   ⚠  {ACTUAL_CSV_FILE} no encontrado o vacío — se omite.")
+    for csv_file in ["Historical_Stock_backup_backup.csv", "Actual_Stock.csv"]:
+        if os.path.exists(csv_file) and os.stat(csv_file).st_size > 0:
+            df_csv = load_csv_prices(csv_file)
+            frames_to_merge.append(df_csv)
+            print(f"   📂 {csv_file}: {len(df_csv)} filas | "
+                  f"{df_csv.index[0].date()} → {df_csv.index[-1].date()}")
 
     if frames_to_merge:
         df_migrado = merge_price_frames(*frames_to_merge) if len(frames_to_merge) > 1 else frames_to_merge[0]
         df_migrado.to_parquet(PRICES_FILE, index=True)
-        print(f"\n✅ Migración completada → {PRICES_FILE}")
-        print(f"   📊 {len(df_migrado)} filas | {df_migrado.shape[1]} tickers | "
-              f"{df_migrado.index[0].date()} → {df_migrado.index[-1].date()}")
-        for old_file in [HIST_CSV_FILE, ACTUAL_CSV_FILE]:
-            if os.path.exists(old_file):
-                backup = old_file.replace(".csv", "_backup.csv")
-                os.rename(old_file, backup)
-                print(f"   📁 {old_file} → {backup} (backup)")
+        print(f"✅ Migración completada: {len(df_migrado)} filas | {df_migrado.shape[1]} tickers")
+        for csv_file in ["Historical_Stock_backup.csv", "Actual_Stock.csv"]:
+            if os.path.exists(csv_file):
+                os.rename(csv_file, csv_file.replace(".csv", "_backup.csv"))
     else:
         prices.to_parquet(PRICES_FILE, index=True)
-        print(f"📊 Parquet creado desde cero: {len(prices)} filas | {len(prices.columns)} tickers.")
+        print(f"📊 Parquet creado desde cero.")
+# ── FIN BLOQUE A ELIMINAR ─────────────────────────────────────────────────────
 
-# ── Append diario ────────────────────────────────────────────────────────────
+# ── Append diario (esto queda para siempre) ──────────────────────────────────
 if os.path.exists(PRICES_FILE):
-    df_existente  = pd.read_parquet(PRICES_FILE)
+    df_existente       = pd.read_parquet(PRICES_FILE)
     df_existente.index = pd.to_datetime(df_existente.index)
-    fechas_nuevas = prices.index.difference(df_existente.index)
+    fechas_nuevas      = prices.index.difference(df_existente.index)
 
     if len(fechas_nuevas) > 0:
         df_nuevas    = prices.loc[fechas_nuevas]
@@ -434,10 +384,10 @@ if os.path.exists(PRICES_FILE):
         df_nuevas    = df_nuevas.reindex(columns=todas_cols)
         df_final     = pd.concat([df_existente, df_nuevas]).sort_index()
         df_final.to_parquet(PRICES_FILE, index=True)
-        print(f"📈 {len(fechas_nuevas)} fechas nuevas en Actual_Stock.parquet | "
-              f"Total: {len(df_final)} filas")
+        print(f"📈 {len(fechas_nuevas)} fechas nuevas agregadas | "
+              f"Total acumulado: {len(df_final)} filas")
     else:
-        print("✅ Actual_Stock.parquet ya está al día.")
+        print("✅ Total_Stock.parquet ya está al día.")
 
 # ─────────────────────────────────────────────
 # 15. RESUMEN CONSOLA
@@ -447,7 +397,6 @@ print("🏆 TOP 15 — RANKING FINAL")
 print("="*60)
 top15 = df.sort_values("rank")[
     ["rank", "ticker", "shortName", "score_FINAL_adj", "rating",
-     "score_valuation", "score_profitability",
-     "score_fundamental_momentum"]
+     "score_valuation", "score_profitability", "score_fundamental_momentum"]
 ].head(15)
 print(top15.to_string(index=False))
