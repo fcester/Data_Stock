@@ -6,7 +6,7 @@ import pandas as pd
 import os
 
 PRICES_FILE       = "Actual_Stock.parquet"
-HIST_CSV          = "Historical_Stock_backup.csv"
+HIST_CSV          = "Historical_Stock.csv"
 ACTUAL_CSV        = "Actual_Stock.csv"
 
 # ─────────────────────────────────────────────
@@ -61,7 +61,7 @@ solo_hist   = df_hist.index.difference(df_actual.index)
 solo_actual = df_actual.index.difference(df_hist.index)
 
 print(f"\n📊 Análisis de fechas:")
-print(f"   Historical_Stock_backup.csv : {len(df_hist)} filas")
+print(f"   Historical_Stock.csv : {len(df_hist)} filas")
 print(f"   Actual_Stock.csv            : {len(df_actual)} filas")
 print(f"   Fechas solapadas            : {len(overlap)} "
       f"(se usará el valor de Actual_Stock.csv)")
