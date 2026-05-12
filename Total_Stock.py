@@ -6,7 +6,7 @@ import pandas as pd
 import os
 
 PRICES_FILE       = "Actual_Stock.parquet"
-HIST_CSV          = "Historical_Stock.csv"
+HIST_CSV          = "Historical_Stock (1).csv"
 ACTUAL_CSV        = "Actual_Stock.csv"
 
 # ─────────────────────────────────────────────
