@@ -36,27 +36,40 @@ ATTRIBUTES = [
 ]
 
 # ─────────────────────────────────────────────
-# 2. FUNCIONES PARQUET ↔ POWER BI
+# 2. FUNCIONES PARQUET — FORMATO LARGO ↔ ANCHO
 # ─────────────────────────────────────────────
-def save_parquet_pbi(df, filepath):
+def save_parquet_pbi(df_wide, filepath):
     """
-    Guarda un DataFrame de precios en formato compatible con Power BI.
-    Fecha como columna string, numéricos como float64, compresión gzip.
+    Convierte el DataFrame ancho (fechas × tickers) a formato largo
+    y guarda como Parquet compatible con Power BI.
+
+    Columnas resultantes:
+      - Date   : fecha como string YYYY-MM-DD
+      - Ticker : símbolo del activo
+      - Value  : precio de cierre
+      - Key    : Date + "_" + Ticker (identificador único, evita duplicados en PBI)
     """
-    df_export = df.reset_index()
-    df_export["Date"] = pd.to_datetime(df_export["Date"]).dt.strftime("%Y-%m-%d")
+    df_long = (
+        df_wide
+        .reset_index()
+        .melt(id_vars="Date", var_name="Ticker", value_name="Value")
+    )
 
-    for col in df_export.columns:
-        if col != "Date":
-            df_export[col] = pd.to_numeric(df_export[col], errors="coerce").astype("float64")
+    df_long["Date"] = pd.to_datetime(df_long["Date"]).dt.strftime("%Y-%m-%d")
+    df_long         = df_long.dropna(subset=["Value"])
+    df_long["Key"]  = df_long["Date"] + "_" + df_long["Ticker"]
+    df_long         = df_long.drop_duplicates(subset=["Key"])
+    df_long         = df_long.sort_values(["Ticker", "Date"]).reset_index(drop=True)
+    df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce").astype("float64")
 
-    fields = [pa.field("Date", pa.string())]
-    for col in df_export.columns:
-        if col != "Date":
-            fields.append(pa.field(col, pa.float64()))
+    schema = pa.schema([
+        pa.field("Date",   pa.string()),
+        pa.field("Ticker", pa.string()),
+        pa.field("Value",  pa.float64()),
+        pa.field("Key",    pa.string()),
+    ])
 
-    schema = pa.schema(fields)
-    table  = pa.Table.from_pandas(df_export, schema=schema, preserve_index=False)
+    table = pa.Table.from_pandas(df_long, schema=schema, preserve_index=False)
 
     pq.write_table(
         table,
@@ -67,17 +80,29 @@ def save_parquet_pbi(df, filepath):
         data_page_version="1.0",
     )
 
+    return df_long
+
 def read_parquet_prices(filepath):
     """
-    Lee el parquet de precios con soporte para ambos formatos:
-    - Fecha como columna 'Date' (formato nuevo Power BI compatible)
-    - Fecha como índice (formato anterior)
+    Lee el parquet y devuelve formato ancho (fechas × tickers).
+    Compatible con formato largo (nuevo) y ancho (anterior).
     """
     df = pd.read_parquet(filepath)
 
+    # Formato largo — tiene columna Ticker y Value
+    if "Ticker" in df.columns and "Value" in df.columns:
+        df_wide = df.pivot_table(
+            index="Date", columns="Ticker", values="Value", aggfunc="last"
+        )
+        df_wide.columns.name = None
+        df_wide.index        = pd.to_datetime(df_wide.index)
+        df_wide.index.name   = "Date"
+        return df_wide.sort_index()
+
+    # Formato ancho anterior — fecha como columna o índice
     if "Date" in df.columns:
         df.index = pd.to_datetime(df["Date"])
-        df = df.drop(columns=["Date"])
+        df       = df.drop(columns=["Date"])
     else:
         df.index = pd.to_datetime(df.index)
 
@@ -85,7 +110,7 @@ def read_parquet_prices(filepath):
     return df.sort_index()
 
 # ─────────────────────────────────────────────
-# 3. PRECIOS
+# 3. PRECIOS (últimos 6 meses — todos los tickers)
 # ─────────────────────────────────────────────
 prices = yf.download(tickers, period="6mo", progress=False)["Close"]
 
@@ -98,10 +123,10 @@ last_price = prices.iloc[-1]
 # 4. FUNDAMENTALES + HISTÓRICO
 # ─────────────────────────────────────────────
 if os.path.exists(HISTORICAL_FILE):
-    df_hist = pd.read_parquet(HISTORICAL_FILE)
+    df_hist       = pd.read_parquet(HISTORICAL_FILE)
     existing_keys = set(zip(df_hist["ticker"], df_hist["report_date"]))
 else:
-    df_hist = pd.DataFrame()
+    df_hist       = pd.DataFrame()
     existing_keys = set()
 
 data          = {}
@@ -375,25 +400,65 @@ print("✅ Stock_Screener_PRO.csv actualizado.")
 # 15. APPEND DIARIO → Actual_Stock.parquet
 # ─────────────────────────────────────────────
 if os.path.exists(PRICES_FILE):
-    df_existente  = read_parquet_prices(PRICES_FILE)
+    df_existente = read_parquet_prices(PRICES_FILE)
+    start_date   = df_existente.index.min().strftime("%Y-%m-%d")
+
+    # ── Tickers nuevos en Tickers.csv → descargar histórico completo ────────
+    new_tickers = [t for t in tickers if t not in df_existente.columns]
+
+    if new_tickers:
+        print(f"🆕 {len(new_tickers)} tickers nuevos: {new_tickers}")
+        print(f"   Descargando histórico desde {start_date}...")
+        try:
+            prices_new = yf.download(new_tickers, start=start_date, progress=False)["Close"]
+            if isinstance(prices_new, pd.Series):
+                prices_new = prices_new.to_frame(name=new_tickers[0])
+
+            # Columnas nuevas al existente
+            todas_cols   = df_existente.columns.union(prices_new.columns)
+            df_existente = df_existente.reindex(columns=todas_cols)
+
+            # Fechas del histórico nuevo que no estaban en el parquet
+            fechas_solo_new = prices_new.index.difference(df_existente.index)
+            if len(fechas_solo_new) > 0:
+                df_existente = pd.concat([
+                    df_existente,
+                    prices_new.loc[fechas_solo_new].reindex(columns=todas_cols)
+                ]).sort_index()
+
+            # Rellenar valores del nuevo ticker en fechas existentes
+            fechas_overlap = prices_new.index.intersection(df_existente.index)
+            for col in prices_new.columns:
+                df_existente.loc[fechas_overlap, col] = prices_new.loc[fechas_overlap, col].values
+
+            print(f"   ✅ Histórico incorporado para {len(new_tickers)} tickers nuevos.")
+
+        except Exception as e:
+            print(f"   ⚠  Error descargando histórico de nuevos tickers: {e}")
+
+    # ── Fechas nuevas (últimos 6 meses) para todos los tickers ─────────────
+    todas_cols   = df_existente.columns.union(prices.columns)
+    df_existente = df_existente.reindex(columns=todas_cols)
     fechas_nuevas = prices.index.difference(df_existente.index)
 
     if len(fechas_nuevas) > 0:
-        df_nuevas    = prices.loc[fechas_nuevas]
-        todas_cols   = df_existente.columns.union(df_nuevas.columns)
-        df_existente = df_existente.reindex(columns=todas_cols)
-        df_nuevas    = df_nuevas.reindex(columns=todas_cols)
-        df_final     = pd.concat([df_existente, df_nuevas]).sort_index()
-
-        save_parquet_pbi(df_final, PRICES_FILE)
-
-        print(f"📈 {len(fechas_nuevas)} fechas nuevas agregadas | "
-              f"Total acumulado: {len(df_final)} filas")
+        df_nuevas = prices.loc[fechas_nuevas].reindex(columns=todas_cols)
+        df_final  = pd.concat([df_existente, df_nuevas]).sort_index()
+        print(f"📈 {len(fechas_nuevas)} fechas nuevas agregadas.")
     else:
-        print("✅ Actual_Stock.parquet ya está al día.")
+        df_final = df_existente
+        print("✅ Sin fechas nuevas — parquet ya al día.")
+
+    df_long = save_parquet_pbi(df_final, PRICES_FILE)
+
 else:
-    save_parquet_pbi(prices, PRICES_FILE)
-    print(f"📊 Actual_Stock.parquet creado desde cero con {len(prices)} filas.")
+    # Primera vez
+    df_long = save_parquet_pbi(prices, PRICES_FILE)
+    print(f"📊 Parquet creado desde cero: {len(prices)} filas.")
+
+print(f"💾 Parquet guardado: {len(df_long):,} filas | "
+      f"{df_long['Ticker'].nunique()} tickers | "
+      f"{df_long['Date'].min()} → {df_long['Date'].max()}")
 
 # ─────────────────────────────────────────────
 # 16. RESUMEN CONSOLA
