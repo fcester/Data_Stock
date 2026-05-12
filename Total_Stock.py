@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timezone
 from scipy.stats import linregress
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -36,13 +36,12 @@ ATTRIBUTES = [
 ]
 
 # ─────────────────────────────────────────────
-# 2. FUNCIÓN GUARDADO COMPATIBLE CON POWER BI
+# 2. FUNCIONES PARQUET ↔ POWER BI
 # ─────────────────────────────────────────────
 def save_parquet_pbi(df, filepath):
     """
-    Guarda un DataFrame de precios en formato Parquet
-    compatible con Power BI (gzip, data page v1, tipos explícitos).
-    El índice datetime se convierte a columna 'Date' como string.
+    Guarda un DataFrame de precios en formato compatible con Power BI.
+    Fecha como columna string, numéricos como float64, compresión gzip.
     """
     df_export = df.reset_index()
     df_export["Date"] = pd.to_datetime(df_export["Date"]).dt.strftime("%Y-%m-%d")
@@ -70,13 +69,19 @@ def save_parquet_pbi(df, filepath):
 
 def read_parquet_prices(filepath):
     """
-    Lee el parquet de precios y devuelve un DataFrame
-    con índice datetime (reconstruye desde columna 'Date').
+    Lee el parquet de precios con soporte para ambos formatos:
+    - Fecha como columna 'Date' (formato nuevo Power BI compatible)
+    - Fecha como índice (formato anterior)
     """
     df = pd.read_parquet(filepath)
-    df.index = pd.to_datetime(df["Date"])
+
+    if "Date" in df.columns:
+        df.index = pd.to_datetime(df["Date"])
+        df = df.drop(columns=["Date"])
+    else:
+        df.index = pd.to_datetime(df.index)
+
     df.index.name = "Date"
-    df = df.drop(columns=["Date"])
     return df.sort_index()
 
 # ─────────────────────────────────────────────
@@ -101,7 +106,7 @@ else:
 
 data          = {}
 new_hist_rows = []
-fetch_date    = datetime.today().strftime("%Y-%m-%d")
+fetch_date    = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
 
 for t in tickers:
     try:
@@ -110,7 +115,7 @@ for t in tickers:
 
         report_ts = info.get("mostRecentQuarter")
         if report_ts:
-            report_date = datetime.utcfromtimestamp(report_ts).strftime("%Y-%m-%d")
+            report_date = datetime.fromtimestamp(report_ts, tz=timezone.utc).strftime("%Y-%m-%d")
             if (t, report_date) not in existing_keys:
                 row = {"ticker": t, "report_date": report_date, "fetch_date": fetch_date}
                 for attr in HISTORICAL_ATTRIBUTES:
@@ -387,7 +392,6 @@ if os.path.exists(PRICES_FILE):
     else:
         print("✅ Actual_Stock.parquet ya está al día.")
 else:
-    # Primera vez: guardar los precios descargados directamente
     save_parquet_pbi(prices, PRICES_FILE)
     print(f"📊 Actual_Stock.parquet creado desde cero con {len(prices)} filas.")
 
