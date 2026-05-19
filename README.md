@@ -171,7 +171,7 @@ let
     Result = Parquet.Document(Binary)
 in
     Result
-```
+
 yfinance
 pandas
 numpy
@@ -203,5 +203,8 @@ Tickers.csv  ──────────────────────�
                          ▼
                     Power BI Report
 
+```
+
 The workflow runs automatically every day at **16:00 UTC** and can also be
 triggered manually.
+```
