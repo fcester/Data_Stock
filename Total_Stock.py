@@ -536,31 +536,21 @@ def label(x):
 df["rating"] = df["score_FINAL_adj"].apply(label)
 
 # ─────────────────────────────────────────────
-# 17. OUTPUT SCREENER
+# 17. OUTPUT SCREENER DIARIO
 # ─────────────────────────────────────────────
 df.drop(columns=["mostRecentQuarter"], inplace=True, errors="ignore")
 
 output_cols = [
-    # Identificación
     "ticker", "shortName", "sector", "industry",
-    # Ranking
     "rank", "score_FINAL_adj", "rating", "data_completeness",
-    # Scores por categoría
     "score_valuation", "score_profitability", "score_growth",
     "score_financial", "score_momentum", "score_fundamental_momentum", "score_income",
-    # ── KPIs históricos: tendencias ──────────────────────────────────────────
-    "revenue_trend",  "revenue_r2",  "revenue_cagr",  "revenue_qoq",  "revenue_accel",
-    "ebitda_trend",   "ebitda_r2",   "ebitda_cagr",   "ebitda_qoq",   "ebitda_accel",
-    "margin_trend",   "margin_r2",   "margin_cagr",   "margin_qoq",   "margin_accel",
-    "debt_trend",     "debt_r2",     "debt_cagr",     "debt_qoq",     "debt_accel",
-    "fcf_trend",      "fcf_r2",      "fcf_cagr",      "fcf_qoq",      "fcf_accel",
-    "earnings_trend", "earnings_r2", "earnings_cagr", "earnings_qoq", "earnings_accel",
-    "roe_trend",      "roe_r2",      "roe_cagr",      "roe_qoq",      "roe_accel",
-    "earnings_consistency",
-    # ── Precio y técnicos ────────────────────────────────────────────────────
+    "revenue_trend", "ebitda_trend", "margin_trend",
+    "debt_trend", "fcf_trend", "earnings_consistency",
+    "revenue_r2", "ebitda_r2", "revenue_cagr", "ebitda_cagr",
+    "revenue_qoq", "ebitda_qoq", "revenue_accel", "margin_accel",
     "lastPrice", "priceVs50dMA", "priceVs200dMA",
     "priceVs52wHigh", "priceVs52wLow", "position52w",
-    # ── Fundamentales raw ────────────────────────────────────────────────────
     "beta", "marketCap", "dividendYield", "liquidity_flag",
     "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
     "returnOnEquity", "profitMargins", "operatingMargins",
@@ -569,8 +559,43 @@ output_cols = [
 ]
 
 output_cols = [c for c in output_cols if c in df.columns]
+
+# Snapshot actual (sobreescribe) — para PBI "estado de hoy"
 df[output_cols].to_csv("Stock_Screener_PRO.csv", index=False)
-print("\n✅ Stock_Screener_PRO.csv actualizado.")
+print("✅ Stock_Screener_PRO.csv actualizado.")
+
+# ─────────────────────────────────────────────
+# 17B. HISTÓRICO DEL SCREENER — append con fecha
+# ─────────────────────────────────────────────
+SCREENER_HISTORY_FILE = "Stock_Screener_History.parquet"
+
+df_snapshot                = df[output_cols].copy()
+df_snapshot["snapshot_date"] = fetch_date
+
+if os.path.exists(SCREENER_HISTORY_FILE):
+    df_hist_screener = pd.read_parquet(SCREENER_HISTORY_FILE)
+
+    # Si ya existe un snapshot de hoy, lo reemplaza
+    df_hist_screener = df_hist_screener[
+        df_hist_screener["snapshot_date"] != fetch_date
+    ]
+    df_hist_screener = pd.concat(
+        [df_hist_screener, df_snapshot], ignore_index=True
+    )
+else:
+    df_hist_screener = df_snapshot
+
+df_hist_screener = df_hist_screener.sort_values(
+    ["snapshot_date", "rank"]
+).reset_index(drop=True)
+
+df_hist_screener.to_parquet(SCREENER_HISTORY_FILE, index=False)
+
+n_fechas = df_hist_screener["snapshot_date"].nunique()
+print(f"📅 Stock_Screener_History.parquet actualizado: "
+      f"{n_fechas} días | "
+      f"{df_hist_screener['snapshot_date'].min()} → "
+      f"{df_hist_screener['snapshot_date'].max()}")
 
 # ─────────────────────────────────────────────
 # 18. APPEND DIARIO → Actual_Stock.parquet
