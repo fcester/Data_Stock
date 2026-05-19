@@ -171,7 +171,7 @@ let
     Result = Parquet.Document(Binary)
 in
     Result
-
+```
 yfinance
 pandas
 numpy
