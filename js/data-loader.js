@@ -1,9 +1,9 @@
-
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
 let dbInstance = null;
+let alreadyRegistered = new Set();
 
 async function obtenerDB_() {
   if (dbInstance) return dbInstance;
@@ -25,7 +25,29 @@ async function obtenerDB_() {
   return db;
 }
 
-// ===== CSV LOADER (se mantiene igual, sin cambios, ya funcionaba bien) =====
+async function registrarParquet_(nombreArchivo) {
+  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
+  if (alreadyRegistered.has(alias)) return alias;
+
+  const db = await obtenerDB_();
+  await db.registerFileURL(alias, BASE_URL + nombreArchivo, duckdb.DuckDBDataProtocol.HTTP, false);
+  alreadyRegistered.add(alias);
+  return alias;
+}
+
+// Ejecuta cualquier SQL contra los parquet ya registrados. Uso interno y externo (cartera, detalle, etc.)
+export async function consultarSQL(sql) {
+  const db = await obtenerDB_();
+  const conn = await db.connect();
+  try {
+    const resultado = await conn.query(sql);
+    return resultado.toArray().map(row => row.toJSON());
+  } finally {
+    await conn.close();
+  }
+}
+
+// ===== CSV LOADER (Screener, liviano, se carga completo) =====
 async function cargarCSV(nombreArchivo) {
   const res = await fetch(BASE_URL + nombreArchivo);
   if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
@@ -56,29 +78,5 @@ function normalizarValor_(columna, valor) {
   return isNaN(num) ? limpio : num;
 }
 
-// ===== PARQUET LOADER (ahora vía DuckDB-Wasm, consulta SQL directa) =====
-async function cargarParquet(nombreArchivo) {
-  const db = await obtenerDB_();
-  const conn = await db.connect();
-
-  const url = BASE_URL + nombreArchivo;
-  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
-
-  await db.registerFileURL(alias, url, duckdb.DuckDBDataProtocol.HTTP, false);
-  const resultado = await conn.query(`SELECT * FROM parquet_scan('${alias}')`);
-
-  const filas = resultado.toArray().map(row => row.toJSON());
-  await conn.close();
-  return filas;
-}
-
-// ===== CARGA GENERAL AL INICIAR LA APP =====
-export async function cargarTodosLosDatos() {
-  const [screener, precios, fundamentales] = await Promise.all([
-    cargarCSV('Stock_Screener_PRO.csv'),
-    cargarParquet('Actual_Stock.parquet'),
-    cargarParquet('stock_fundamentals_history.parquet')
-  ]);
-
-  return { screener, precios, fundamentales };
-}
+// ===== CARGA INICIAL: solo el screener completo + registro de los parquet (sin traerlos enteros) =====
+export async
