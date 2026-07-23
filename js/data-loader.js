@@ -5,25 +5,33 @@ const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 let dbInstance = null;
 let alreadyRegistered = new Set();
 
+
 async function obtenerDB_() {
   if (dbInstance) return dbInstance;
 
+  console.log('Iniciando DuckDB...');
   const CDN_BUNDLES = duckdb.getJsDelivrBundles();
   const bundle = await duckdb.selectBundle(CDN_BUNDLES);
+  console.log('Bundle seleccionado:', bundle);
 
   const workerUrl = URL.createObjectURL(
     new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
   );
 
   const worker = new Worker(workerUrl);
+  console.log('Worker creado');
+
   const logger = new duckdb.ConsoleLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
+  console.log('Instanciando DB...');
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  URL.revokeObjectURL(workerUrl);
+  console.log('DB instanciada correctamente');
 
+  URL.revokeObjectURL(workerUrl);
   dbInstance = db;
   return db;
 }
+
 
 async function registrarParquet_(nombreArchivo) {
   const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
@@ -48,12 +56,17 @@ export async function consultarSQL(sql) {
 }
 
 // ===== CSV LOADER (Screener, liviano, se carga completo) =====
+
 async function cargarCSV(nombreArchivo) {
+  console.log('Empezando a cargar CSV:', nombreArchivo);
   const res = await fetch(BASE_URL + nombreArchivo);
+  console.log('Respuesta del CSV recibida, status:', res.status);
   if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
   const texto = await res.text();
+  console.log('CSV parseado, longitud de texto:', texto.length);
   return parsearCSV_(texto);
 }
+
 
 function parsearCSV_(texto) {
   const lineas = texto.trim().split('\n');
