@@ -33,9 +33,11 @@ async function obtenerDB_() {
 }
 
 
+
 async function registrarParquet_(nombreArchivo) {
-  // Usamos el nombre de archivo tal cual como alias, sin destruir la extension .parquet
-  const alias = nombreArchivo;
+  // Alias con barra inicial: le indica a DuckDB que es un path absoluto,
+  // evitando que lo interprete como identificador/glob y "mangle" el punto.
+  const alias = '/' + nombreArchivo;
   if (alreadyRegistered.has(alias)) return alias;
 
   const db = await obtenerDB_();
@@ -43,6 +45,12 @@ async function registrarParquet_(nombreArchivo) {
   alreadyRegistered.add(alias);
   return alias;
 }
+
+export async function cargarParquetCompleto(nombreArchivo) {
+  const alias = await registrarParquet_(nombreArchivo);
+  return consultarSQL(`SELECT * FROM parquet_scan('${alias}')`);
+}
+
 
 
 // Ejecuta cualquier SQL contra los parquet ya registrados. Uso interno y externo (cartera, detalle, etc.)
