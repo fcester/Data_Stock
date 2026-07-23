@@ -4,7 +4,7 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
 let dbInstance = null;
-let alreadyRegistered = new Set();
+let httpfsListo = false;
 
 async function obtenerDB_() {
   if (dbInstance) return dbInstance;
@@ -32,23 +32,21 @@ async function obtenerDB_() {
   return db;
 }
 
-async function registrarParquet_(nombreArchivo) {
-  // Alias 100% alfanumerico, sin puntos, sin barras, sin ningun caracter especial
-  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '');
-  if (alreadyRegistered.has(alias)) return alias;
-
-  const db = await obtenerDB_();
-  await db.registerFileURL(alias, BASE_URL + nombreArchivo, duckdb.DuckDBDataProtocol.HTTP, false);
-  alreadyRegistered.add(alias);
-  console.log('Parquet registrado con alias:', alias);
-  return alias;
+async function asegurarHttpfs_(conn) {
+  if (httpfsListo) return;
+  console.log('Instalando y cargando extension httpfs...');
+  await conn.query('INSTALL httpfs;');
+  await conn.query('LOAD httpfs;');
+  httpfsListo = true;
+  console.log('httpfs listo');
 }
 
-// Ejecuta cualquier SQL contra los parquet ya registrados. Uso interno y externo (cartera, detalle, etc.)
+// Ejecuta cualquier SQL, asegurando que httpfs este disponible antes de correr la query
 export async function consultarSQL(sql) {
   const db = await obtenerDB_();
   const conn = await db.connect();
   try {
+    await asegurarHttpfs_(conn);
     const resultado = await conn.query(sql);
     return resultado.toArray().map(row => row.toJSON());
   } finally {
@@ -56,11 +54,11 @@ export async function consultarSQL(sql) {
   }
 }
 
-// Trae TODAS las filas de un parquet registrado (usar con cuidado en archivos grandes)
+// Lee un parquet remoto directamente por URL, sin registerFileURL ni alias
 export async function cargarParquetCompleto(nombreArchivo) {
-  const alias = await registrarParquet_(nombreArchivo);
-  console.log('Consultando parquet con alias:', alias);
-  return consultarSQL(`SELECT * FROM read_parquet('${alias}')`);
+  const url = BASE_URL + nombreArchivo;
+  console.log('Consultando parquet directo por URL:', url);
+  return consultarSQL(`SELECT * FROM read_parquet('${url}')`);
 }
 
 // ===== CSV LOADER (Screener, liviano, se carga completo) =====
