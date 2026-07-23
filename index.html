@@ -8,12 +8,31 @@
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/hyparquet/+esm"></script>
 </head>
 <body>
-  <!-- misma estructura de secciones que ya definimos: home, screener, cartera, panel lateral -->
   <div id="app-root">Cargando datos...</div>
 
-  <script type="module" src="js/data-loader.js"></script>
+  <script type="module">
+    import { cargarTodosLosDatos } from './js/data-loader.js';
+
+    async function iniciar() {
+      const root = document.getElementById('app-root');
+      try {
+        const { screener, precios, fundamentales } = await cargarTodosLosDatos();
+        root.innerHTML = `
+          <h2>✅ Datos cargados correctamente</h2>
+          <p>Tickers en Screener: ${screener.length}</p>
+          <p>Filas de precios: ${precios.length}</p>
+          <p>Filas de fundamentales: ${fundamentales.length}</p>
+          <pre>${JSON.stringify(screener[0], null, 2)}</pre>
+        `;
+      } catch (err) {
+        root.innerHTML = `<p style="color:red">Error cargando datos: ${err.message}</p>`;
+        console.error(err);
+      }
+    }
+
+    iniciar();
+  </script>
 </body>
 </html>
