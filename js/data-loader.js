@@ -1,7 +1,8 @@
 
 import { parquetRead } from 'https://cdn.jsdelivr.net/npm/hyparquet/+esm';
 
-const BASE_URL = 'https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/';
+
+const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
 // ===== CSV LOADER (equivalente a leer la pestaña Screener) =====
 async function cargarCSV(nombreArchivo) {
