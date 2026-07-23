@@ -1,8 +1,17 @@
 
-import { parquetRead } from 'https://cdn.jsdelivr.net/npm/hyparquet/+esm';
-
+import { tableFromIPC } from 'https://cdn.jsdelivr.net/npm/apache-arrow@16.0.0/+esm';
+import initWasm, { readParquet } from 'https://cdn.jsdelivr.net/npm/parquet-wasm@0.7.1/esm/parquet_wasm.js';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
+
+let wasmInicializado = false;
+
+async function asegurarWasm_() {
+  if (!wasmInicializado) {
+    await initWasm();
+    wasmInicializado = true;
+  }
+}
 
 // ===== CSV LOADER (equivalente a leer la pestaña Screener) =====
 async function cargarCSV(nombreArchivo) {
@@ -35,17 +44,19 @@ function normalizarValor_(columna, valor) {
   return isNaN(num) ? limpio : num;
 }
 
-// ===== PARQUET LOADER (equivalente a leer la pestaña Precios / Fundamentales) =====
+// ===== PARQUET LOADER (ahora con parquet-wasm, soporta GZIP) =====
 async function cargarParquet(nombreArchivo) {
+  await asegurarWasm_();
+
   const res = await fetch(BASE_URL + nombreArchivo);
   if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
   const buffer = await res.arrayBuffer();
 
-  let filas = [];
-  await parquetRead({
-    file: buffer,
-    onComplete: (data) => { filas = data; }
-  });
+  const wasmTable = readParquet(new Uint8Array(buffer));
+  const arrowTable = tableFromIPC(wasmTable.intoIPCStream());
+  const filas = arrowTable.toArray().map(row => row.toJSON());
+
+  wasmTable.free();
   return filas;
 }
 
