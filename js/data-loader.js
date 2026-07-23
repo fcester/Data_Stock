@@ -6,12 +6,15 @@ const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
 let wasmInicializado = false;
 
+
 async function asegurarWasm_() {
   if (!wasmInicializado) {
-    await initWasm();
+    const wasmUrl = 'https://cdn.jsdelivr.net/npm/parquet-wasm@0.7.1/esm/parquet_wasm_bg.wasm';
+    await initWasm(wasmUrl);
     wasmInicializado = true;
   }
 }
+
 
 // ===== CSV LOADER (equivalente a leer la pestaña Screener) =====
 async function cargarCSV(nombreArchivo) {
