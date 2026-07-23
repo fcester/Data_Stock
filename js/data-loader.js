@@ -1,10 +1,10 @@
+
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
 let dbInstance = null;
 let alreadyRegistered = new Set();
-
 
 async function obtenerDB_() {
   if (dbInstance) return dbInstance;
@@ -32,7 +32,6 @@ async function obtenerDB_() {
   return db;
 }
 
-
 async function registrarParquet_(nombreArchivo) {
   const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
   if (alreadyRegistered.has(alias)) return alias;
@@ -55,6 +54,12 @@ export async function consultarSQL(sql) {
   }
 }
 
+// Trae TODAS las filas de un parquet registrado (usar con cuidado en archivos grandes)
+export async function cargarParquetCompleto(nombreArchivo) {
+  const alias = await registrarParquet_(nombreArchivo);
+  return consultarSQL(`SELECT * FROM parquet_scan('${alias}')`);
+}
+
 // ===== CSV LOADER (Screener, liviano, se carga completo) =====
 
 async function cargarCSV(nombreArchivo) {
@@ -66,7 +71,6 @@ async function cargarCSV(nombreArchivo) {
   console.log('CSV parseado, longitud de texto:', texto.length);
   return parsearCSV_(texto);
 }
-
 
 function parsearCSV_(texto) {
   const lineas = texto.trim().split('\n');
@@ -91,5 +95,13 @@ function normalizarValor_(columna, valor) {
   return isNaN(num) ? limpio : num;
 }
 
-// ===== CARGA INICIAL: solo el screener completo + registro de los parquet (sin traerlos enteros) =====
-export async
+// ===== CARGA INICIAL: screener completo + los dos parquet completos =====
+export async function cargarTodosLosDatos() {
+  const [screener, precios, fundamentales] = await Promise.all([
+    cargarCSV('Stock_Screener_PRO.csv'),
+    cargarParquetCompleto('Actual_Stock.parquet'),
+    cargarParquetCompleto('stock_fundamentals_history.parquet')
+  ]);
+
+  return { screener, precios, fundamentales };
+}
