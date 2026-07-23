@@ -42,17 +42,34 @@
   </main>
 
   <main id="vista-completa" class="vista oculto">
-    <p>(Próximo paso: Screener completo con filtros)</p>
+    <div class="section-header">
+      <button class="btn-secondary" id="btn-volver-home">← Volver</button>
+      <h2>Screener completo</h2>
+    </div>
+
+    <div class="filtros-bar">
+      <input type="text" id="buscador" placeholder="Buscar por ticker o nombre de empresa...">
+      <div class="selects-fila">
+        <select id="filtro-sector-select" class="select-pill"></select>
+        <select id="filtro-industry-select" class="select-pill"></select>
+        <select id="filtro-rating" class="select-pill">
+          <option value="Todos">Todos los ratings</option>
+          <option value="Excelente">Excelente</option>
+          <option value="Buena">Buena</option>
+          <option value="Neutral">Neutral</option>
+          <option value="Débil">Débil</option>
+          <option value="Evitar">Evitar</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="tabla-completa-container"></div>
   </main>
 
   <main id="vista-cartera" class="vista oculto">
     <p>(Próximo paso: Cartera)</p>
   </main>
 
-  <script>
-    console.log('PASO 0: HTML cargado, a punto de cargar main.js como módulo');
-  </script>
-  <script type="module" src="js/main.js" onerror="console.error('PASO 0-ERROR: main.js no se pudo cargar como <script> tag')"></script>
-
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
