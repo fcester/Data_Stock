@@ -263,30 +263,21 @@ body {
   gap: 12px;
 }
 
-.buscador-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.buscador-icono {
-  position: absolute;
-  left: 14px;
-  font-size: 0.9rem;
-  opacity: 0.6;
-}
+
 #buscador {
   width: 100%;
-  padding: 12px 16px 12px 40px;
-  border-radius: 12px;
+  padding: 12px 18px;
+  border-radius: 20px;
   border: 1px solid var(--gris-claro);
-  background: var(--fondo);
-  font-size: 0.9rem;
+  background: var(--card-bg);
+  font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 #buscador:focus {
   border-color: var(--azul-claro);
-  background: white;
+  box-shadow: 0 0 0 3px rgba(74, 116, 243, 0.15);
 }
 
 .selects-fila {
