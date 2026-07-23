@@ -10,29 +10,45 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 </head>
 <body>
-  <div id="app-root">Cargando datos...</div>
 
-  <script type="module">
-    import { cargarTodosLosDatos } from './js/data-loader.js';
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">📈</span>
+      <span class="brand-name">Stock Screener <span class="pro">PRO</span></span>
+    </div>
+    <button class="btn-nav" id="btn-ir-cartera">💼 Mi Cartera</button>
+  </header>
 
-    async function iniciar() {
-      const root = document.getElementById('app-root');
-      try {
-        const { screener, precios, fundamentales } = await cargarTodosLosDatos();
-        root.innerHTML = `
-          <h2>✅ Datos cargados correctamente</h2>
-          <p>Tickers en Screener: ${screener.length}</p>
-          <p>Filas de precios: ${precios.length}</p>
-          <p>Filas de fundamentales: ${fundamentales.length}</p>
-          <pre>${JSON.stringify(screener[0], null, 2)}</pre>
-        `;
-      } catch (err) {
-        root.innerHTML = `<p style="color:red">Error cargando datos: ${err.message}</p>`;
-        console.error(err);
-      }
-    }
+  <main id="vista-home" class="vista">
+    <section class="kpis-grid" id="kpis-globales">
+      <div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div>
+    </section>
 
-    iniciar();
-  </script>
+    <section class="top10-section">
+      <div class="section-header">
+        <h2>Top 10 — Mejor score del mercado</h2>
+        <button class="btn-secondary" id="btn-ver-todo">Ver todo →</button>
+      </div>
+      <div id="top10-container" class="ranking-list">
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+      </div>
+    </section>
+  </main>
+
+  <main id="vista-completa" class="vista oculto">
+    <p>(Próximo paso: Screener completo con filtros)</p>
+  </main>
+
+  <main id="vista-cartera" class="vista oculto">
+    <p>(Próximo paso: Cartera)</p>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
