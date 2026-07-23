@@ -73,11 +73,11 @@ async function cargarCSV(nombreArchivo) {
   return parsearCSV_(texto);
 }
 
+
 function parsearCSV_(texto) {
-  const lineas = texto.trim().split('\n');
-  const headers = lineas[0].split(',').map(h => h.trim());
-  return lineas.slice(1).map(linea => {
-    const valores = linea.split(',');
+  const filas = parsearCSVConComillas_(texto);
+  const headers = filas[0].map(h => h.trim());
+  return filas.slice(1).map(valores => {
     const obj = {};
     headers.forEach((h, i) => {
       obj[h] = normalizarValor_(h, valores[i]);
@@ -85,6 +85,55 @@ function parsearCSV_(texto) {
     return obj;
   });
 }
+
+// Parser CSV que respeta comillas dobles, incluyendo comas y saltos de linea dentro de un campo
+function parsearCSVConComillas_(texto) {
+  const filas = [];
+  let fila = [];
+  let campo = '';
+  let dentroDeComillas = false;
+
+  for (let i = 0; i < texto.length; i++) {
+    const char = texto[i];
+    const siguiente = texto[i + 1];
+
+    if (dentroDeComillas) {
+      if (char === '"' && siguiente === '"') {
+        campo += '"';
+        i++;
+      } else if (char === '"') {
+        dentroDeComillas = false;
+      } else {
+        campo += char;
+      }
+    } else {
+      if (char === '"') {
+        dentroDeComillas = true;
+      } else if (char === ',') {
+        fila.push(campo);
+        campo = '';
+      } else if (char === '\n' || (char === '\r' && siguiente === '\n')) {
+        if (char === '\r') i++;
+        fila.push(campo);
+        filas.push(fila);
+        fila = [];
+        campo = '';
+      } else if (char === '\r') {
+        // salto de linea viejo estilo Mac, ignorar
+      } else {
+        campo += char;
+      }
+    }
+  }
+
+  if (campo.length > 0 || fila.length > 0) {
+    fila.push(campo);
+    filas.push(fila);
+  }
+
+  return filas.filter(f => f.length > 1 || f[0] !== '');
+}
+
 
 const COLUMNAS_TEXTO = new Set(['ticker', 'shortName', 'sector', 'industry', 'rating', 'Ticker']);
 
