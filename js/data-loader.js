@@ -1,26 +1,31 @@
 
-import { tableFromIPC } from 'https://cdn.jsdelivr.net/npm/apache-arrow@16.0.0/+esm';
-import initWasm, { readParquet } from 'https://cdn.jsdelivr.net/npm/parquet-wasm@0.7.1/esm/parquet_wasm.js';
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
-let wasmInicializado = false;
+let dbInstance = null;
 
+async function obtenerDB_() {
+  if (dbInstance) return dbInstance;
 
+  const CDN_BUNDLES = duckdb.getJsDelivrBundles();
+  const bundle = await duckdb.selectBundle(CDN_BUNDLES);
 
-let promesaWasm = null;
+  const workerUrl = URL.createObjectURL(
+    new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+  );
 
-function asegurarWasm_() {
-  if (!promesaWasm) {
-    const wasmUrl = 'https://cdn.jsdelivr.net/npm/parquet-wasm@0.7.1/esm/parquet_wasm_bg.wasm';
-    promesaWasm = initWasm(wasmUrl);
-  }
-  return promesaWasm;
+  const worker = new Worker(workerUrl);
+  const logger = new duckdb.ConsoleLogger();
+  const db = new duckdb.AsyncDuckDB(logger, worker);
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  URL.revokeObjectURL(workerUrl);
+
+  dbInstance = db;
+  return db;
 }
 
-
-
-// ===== CSV LOADER (equivalente a leer la pestaña Screener) =====
+// ===== CSV LOADER (se mantiene igual, sin cambios, ya funcionaba bien) =====
 async function cargarCSV(nombreArchivo) {
   const res = await fetch(BASE_URL + nombreArchivo);
   if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
@@ -51,19 +56,19 @@ function normalizarValor_(columna, valor) {
   return isNaN(num) ? limpio : num;
 }
 
-
+// ===== PARQUET LOADER (ahora vía DuckDB-Wasm, consulta SQL directa) =====
 async function cargarParquet(nombreArchivo) {
-  await asegurarWasm_();
+  const db = await obtenerDB_();
+  const conn = await db.connect();
 
-  const res = await fetch(BASE_URL + nombreArchivo);
-  if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
-  const buffer = await res.arrayBuffer();
+  const url = BASE_URL + nombreArchivo;
+  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
 
-  const wasmTable = readParquet(new Uint8Array(buffer));
-  const arrowTable = tableFromIPC(wasmTable.intoIPCStream());
-  const filas = arrowTable.toArray().map(row => row.toJSON());
+  await db.registerFileURL(alias, url, duckdb.DuckDBDataProtocol.HTTP, false);
+  const resultado = await conn.query(`SELECT * FROM parquet_scan('${alias}')`);
 
-  wasmTable.free();
+  const filas = resultado.toArray().map(row => row.toJSON());
+  await conn.close();
   return filas;
 }
 
