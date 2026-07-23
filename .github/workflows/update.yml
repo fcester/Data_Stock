@@ -23,7 +23,7 @@ jobs:
           pip install yfinance pandas numpy scipy pyarrow
 
       - name: Ejecutar script
-        run: python Total_Stock.py
+        run: python transformarpar.py
 
       - name: Commit y push cambios
         uses: EndBug/add-and-commit@v9
