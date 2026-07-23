@@ -157,7 +157,6 @@ body {
 /* ===== RANKING LIST (Top 10 / Screener) ===== */
 .ranking-list { display: flex; flex-direction: column; gap: 10px; }
 
-
 .ranking-row {
   display: flex;
   flex-direction: column;
@@ -186,7 +185,7 @@ body {
 
 .rank-number { font-weight: 700; color: var(--azul-medio); }
 
-.ticker-cell { min-width: 0; } /* evita que el texto largo empuje el layout */
+.ticker-cell { min-width: 0; }
 .ticker-cell .ticker-symbol { font-weight: 700; }
 .ticker-cell .ticker-name {
   font-size: 0.78rem;
@@ -251,3 +250,85 @@ body {
   border-radius: 14px;
 }
 .skeleton-row { height: 58px; }
+
+/* ===== FILTROS (Screener completo) ===== */
+.filtros-bar {
+  background: var(--card-bg);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(38, 73, 178, 0.08);
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.buscador-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.buscador-icono {
+  position: absolute;
+  left: 14px;
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+#buscador {
+  width: 100%;
+  padding: 12px 16px 12px 40px;
+  border-radius: 12px;
+  border: 1px solid var(--gris-claro);
+  background: var(--fondo);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+#buscador:focus {
+  border-color: var(--azul-claro);
+  background: white;
+}
+
+.selects-fila {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .selects-fila { grid-template-columns: repeat(3, 1fr); }
+}
+
+.select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.select-icono {
+  position: absolute;
+  left: 14px;
+  font-size: 0.85rem;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.select-pill {
+  width: 100%;
+  padding: 10px 14px 10px 38px;
+  border-radius: 12px;
+  border: 1px solid var(--gris-claro);
+  background: var(--fondo);
+  font-size: 0.85rem;
+  color: var(--texto-principal);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--azul-medio) 50%),
+                     linear-gradient(135deg, var(--azul-medio) 50%, transparent 50%);
+  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.select-pill:hover { border-color: var(--azul-medio); }
+.select-pill:focus { border-color: var(--azul-claro); outline: none; background-color: white; }
