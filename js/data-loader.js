@@ -32,26 +32,17 @@ async function obtenerDB_() {
   return db;
 }
 
-
-
 async function registrarParquet_(nombreArchivo) {
-  // Alias con barra inicial: le indica a DuckDB que es un path absoluto,
-  // evitando que lo interprete como identificador/glob y "mangle" el punto.
-  const alias = '/' + nombreArchivo;
+  // Alias 100% alfanumerico, sin puntos, sin barras, sin ningun caracter especial
+  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '');
   if (alreadyRegistered.has(alias)) return alias;
 
   const db = await obtenerDB_();
   await db.registerFileURL(alias, BASE_URL + nombreArchivo, duckdb.DuckDBDataProtocol.HTTP, false);
   alreadyRegistered.add(alias);
+  console.log('Parquet registrado con alias:', alias);
   return alias;
 }
-
-export async function cargarParquetCompleto(nombreArchivo) {
-  const alias = await registrarParquet_(nombreArchivo);
-  return consultarSQL(`SELECT * FROM parquet_scan('${alias}')`);
-}
-
-
 
 // Ejecuta cualquier SQL contra los parquet ya registrados. Uso interno y externo (cartera, detalle, etc.)
 export async function consultarSQL(sql) {
@@ -68,7 +59,8 @@ export async function consultarSQL(sql) {
 // Trae TODAS las filas de un parquet registrado (usar con cuidado en archivos grandes)
 export async function cargarParquetCompleto(nombreArchivo) {
   const alias = await registrarParquet_(nombreArchivo);
-  return consultarSQL(`SELECT * FROM parquet_scan('${alias}')`);
+  console.log('Consultando parquet con alias:', alias);
+  return consultarSQL(`SELECT * FROM read_parquet('${alias}')`);
 }
 
 // ===== CSV LOADER (Screener, liviano, se carga completo) =====
