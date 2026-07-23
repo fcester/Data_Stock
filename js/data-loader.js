@@ -7,13 +7,17 @@ const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 let wasmInicializado = false;
 
 
-async function asegurarWasm_() {
-  if (!wasmInicializado) {
+
+let promesaWasm = null;
+
+function asegurarWasm_() {
+  if (!promesaWasm) {
     const wasmUrl = 'https://cdn.jsdelivr.net/npm/parquet-wasm@0.7.1/esm/parquet_wasm_bg.wasm';
-    await initWasm(wasmUrl);
-    wasmInicializado = true;
+    promesaWasm = initWasm(wasmUrl);
   }
+  return promesaWasm;
 }
+
 
 
 // ===== CSV LOADER (equivalente a leer la pestaña Screener) =====
@@ -47,7 +51,7 @@ function normalizarValor_(columna, valor) {
   return isNaN(num) ? limpio : num;
 }
 
-// ===== PARQUET LOADER (ahora con parquet-wasm, soporta GZIP) =====
+
 async function cargarParquet(nombreArchivo) {
   await asegurarWasm_();
 
