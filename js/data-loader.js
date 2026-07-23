@@ -32,8 +32,10 @@ async function obtenerDB_() {
   return db;
 }
 
+
 async function registrarParquet_(nombreArchivo) {
-  const alias = nombreArchivo.replace(/[^a-zA-Z0-9]/g, '_');
+  // Usamos el nombre de archivo tal cual como alias, sin destruir la extension .parquet
+  const alias = nombreArchivo;
   if (alreadyRegistered.has(alias)) return alias;
 
   const db = await obtenerDB_();
@@ -41,6 +43,7 @@ async function registrarParquet_(nombreArchivo) {
   alreadyRegistered.add(alias);
   return alias;
 }
+
 
 // Ejecuta cualquier SQL contra los parquet ya registrados. Uso interno y externo (cartera, detalle, etc.)
 export async function consultarSQL(sql) {
