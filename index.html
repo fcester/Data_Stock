@@ -49,6 +49,10 @@
     <p>(Próximo paso: Cartera)</p>
   </main>
 
-  <script type="module" src="js/main.js"></script>
+  <script>
+    console.log('PASO 0: HTML cargado, a punto de cargar main.js como módulo');
+  </script>
+  <script type="module" src="js/main.js" onerror="console.error('PASO 0-ERROR: main.js no se pudo cargar como <script> tag')"></script>
+
 </body>
 </html>
