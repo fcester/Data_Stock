@@ -1,22 +1,22 @@
 
-import { filaTicker, flechaRendimiento, renderKpisGlobales } from './ui-common.js';
+import { filaTicker, flechaRendimiento, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
 
 export function inicializarHome({ screener, precios }) {
-  document.getElementById('kpis-globales').innerHTML = renderKpisGlobales(screener);
-  pintarTop10(screener, precios);
+  const preciosPorTicker = agruparPreciosPorTicker(precios);
+  const screenerConPrecio = enriquecerConPrecioActual_(screener, preciosPorTicker);
+
+  document.getElementById('kpis-globales').innerHTML = renderKpisGlobales(screenerConPrecio);
+  pintarTop10(screenerConPrecio, preciosPorTicker);
 }
 
-function agruparPreciosPorTicker_(precios) {
-  const mapa = {};
-  precios.forEach(p => {
-    const t = p.Ticker;
-    if (!mapa[t]) mapa[t] = [];
-    mapa[t].push(p);
+// Si lastPrice viene null/undefined (bug de pipeline), usa el ultimo precio
+// disponible en la serie historica como fallback confiable.
+function enriquecerConPrecioActual_(screener, preciosPorTicker) {
+  return screener.map(row => {
+    const tienePrecio = row.lastPrice !== null && row.lastPrice !== undefined;
+    const precioFinal = tienePrecio ? row.lastPrice : obtenerUltimoPrecio(preciosPorTicker, row.ticker);
+    return { ...row, lastPrice: precioFinal };
   });
-  Object.keys(mapa).forEach(t => {
-    mapa[t].sort((a, b) => new Date(a.Date) - new Date(b.Date));
-  });
-  return mapa;
 }
 
 function calcularRendimiento1m_(serieOrdenada, diasHabiles = 21) {
@@ -29,10 +29,7 @@ function calcularRendimiento1m_(serieOrdenada, diasHabiles = 21) {
   return ((actual - hace1m) / hace1m) * 100;
 }
 
-
-function pintarTop10(screener, precios) {
-  const preciosPorTicker = agruparPreciosPorTicker_(precios);
-
+function pintarTop10(screener, preciosPorTicker) {
   const top10 = [...screener]
     .filter(r => r.score_FINAL_adj !== null && r.score_FINAL_adj !== undefined)
     .sort((a, b) => b.score_FINAL_adj - a.score_FINAL_adj)
@@ -56,4 +53,3 @@ function pintarTop10(screener, precios) {
     });
   });
 }
-
