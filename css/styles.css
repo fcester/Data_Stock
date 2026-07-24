@@ -502,3 +502,117 @@ body {
   border-color: transparent;
   box-shadow: 0 4px 14px rgba(38,73,178,0.3);
 }
+
+/* ===== Inputs de Cartera unificados con el estilo de Screener ===== */
+.input-pill {
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--gris-claro);
+  background: var(--card-bg);
+  font-size: 0.95rem;
+  outline: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-family: inherit;
+}
+.input-pill:focus {
+  border-color: var(--azul-claro);
+  box-shadow: 0 0 0 3px rgba(74, 116, 243, 0.15);
+}
+.input-pill-chica { width: 90px; padding: 10px 14px; }
+
+.label-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--texto-principal);
+}
+
+#buscador-tabla-cartera {
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--gris-claro);
+  background: var(--card-bg);
+  font-size: 0.95rem;
+  outline: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 12px;
+}
+#buscador-tabla-cartera:focus {
+  border-color: var(--azul-claro);
+  box-shadow: 0 0 0 3px rgba(74, 116, 243, 0.15);
+}
+
+/* ===== Tabla de seleccion de cartera: mismo lenguaje visual que Screener ===== */
+.tabla-cartera-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--gris-claro);
+  border-radius: 16px;
+  background: var(--card-bg);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.tabla-activos-cartera {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tabla-activos-cartera thead th {
+  position: sticky;
+  top: 0;
+  background: var(--fondo);
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 14px 16px;
+  border-bottom: 2px solid var(--gris-claro);
+  z-index: 5;
+}
+.tabla-activos-cartera td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--fondo);
+  font-size: 0.9rem;
+}
+.tabla-activos-cartera tbody tr {
+  transition: background 0.15s ease;
+}
+.tabla-activos-cartera tbody tr:nth-child(even) {
+  background: rgba(212, 217, 240, 0.15);
+}
+.tabla-activos-cartera tbody tr:hover {
+  background: var(--gris-claro);
+}
+.tabla-activos-cartera tbody tr.seleccionada {
+  background: #EEF2FF;
+  box-shadow: inset 3px 0 0 var(--azul-primario);
+}
+.tabla-activos-cartera .fila-checkbox {
+  width: 36px;
+  text-align: center;
+}
+.tabla-activos-cartera input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--azul-primario);
+}
+.th-ordenable {
+  cursor: pointer;
+  user-select: none;
+}
+.th-ordenable:hover { color: var(--azul-primario); }
+
+/* Contador de seleccion con mas aire, como el resto de la app */
+.contador-seleccion {
+  margin: 14px 0 10px;
+  font-weight: 600;
+  color: var(--azul-primario);
+  font-size: 0.9rem;
+}
