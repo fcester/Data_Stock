@@ -1,5 +1,5 @@
 
-import { filaTicker } from './ui-common.js';
+import { filaTicker, renderKpisGlobales } from './ui-common.js';
 
 let cacheScreenerCompleto = [];
 let arbolSectoresCache = {};
@@ -24,14 +24,12 @@ function poblarSelectsFiltro_() {
   const selectSector = document.getElementById('filtro-sector-select');
   selectSector.innerHTML = '<option value="Todos">Todos los sectores</option>' +
     Object.keys(arbolSectoresCache).sort().map(s => `<option value="${s}">${s}</option>`).join('');
-
   actualizarOpcionesIndustria_('Todos');
 }
 
 function actualizarOpcionesIndustria_(sectorSeleccionado) {
   const selectIndustry = document.getElementById('filtro-industry-select');
   let industrias = [];
-
   if (sectorSeleccionado === 'Todos') {
     const todasSet = new Set();
     Object.values(arbolSectoresCache).forEach(lista => lista.forEach(i => todasSet.add(i)));
@@ -39,7 +37,6 @@ function actualizarOpcionesIndustria_(sectorSeleccionado) {
   } else {
     industrias = (arbolSectoresCache[sectorSeleccionado] || []).slice().sort();
   }
-
   selectIndustry.innerHTML = '<option value="Todas">Todas las industrias</option>' +
     industrias.map(i => `<option value="${i}">${i}</option>`).join('');
 }
@@ -65,12 +62,23 @@ function aplicarFiltros_() {
   }
 
   resultado.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
+
+  // KPIs recalculados en base a lo filtrado (o el universo completo si no hay filtro)
+  const contKpis = document.getElementById('kpis-screener-completo');
+  if (contKpis) contKpis.innerHTML = renderKpisGlobales(resultado);
+
   pintarTablaCompleta_(resultado);
 }
 
 function pintarTablaCompleta_(data) {
   const cont = document.getElementById('tabla-completa-container');
-  cont.innerHTML = `<div class="ranking-list">${data.map(filaTicker).join('')}</div>`;
+
+  if (data.length === 0) {
+    cont.innerHTML = '<p style="text-align:center;color:var(--texto-secundario);padding:24px">No hay tickers que coincidan con estos filtros.</p>';
+    return;
+  }
+
+  cont.innerHTML = `<div class="ranking-list">${data.map(r => filaTicker(r)).join('')}</div>`;
 
   cont.querySelectorAll('.ranking-row').forEach(row => {
     row.addEventListener('click', () => {
@@ -80,7 +88,6 @@ function pintarTablaCompleta_(data) {
   });
 }
 
-// ===== API PÚBLICA DEL MÓDULO =====
 export function inicializarScreener({ screener }) {
   cacheScreenerCompleto = screener;
   arbolSectoresCache = construirArbolSectorIndustria_(screener);
@@ -109,7 +116,6 @@ export function inicializarScreener({ screener }) {
   });
 }
 
-// Se llama cada vez que el usuario entra a la vista completa (por si los filtros necesitan refrescarse)
 export function mostrarVistaCompleta() {
   aplicarFiltros_();
 }
