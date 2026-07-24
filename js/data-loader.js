@@ -1,3 +1,4 @@
+
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
@@ -132,4 +133,95 @@ export async function cargarUniversoCompleto() {
 }
 
 // ===== CSV LOADER manual (sin uso activo hoy: cargarTodosLosDatos ya no lo llama,
-// se mantiene por si lo necesitas en otro lugar. Se puede borr
+// se mantiene por si lo necesitas en otro lugar. Se puede borrar con seguridad
+// si confirmas que no se usa en ningun otro modulo) =====
+async function cargarCSV(nombreArchivo) {
+  console.log('Empezando a cargar CSV:', nombreArchivo);
+  const res = await fetch(BASE_URL + nombreArchivo);
+  console.log('Respuesta del CSV recibida, status:', res.status);
+  if (!res.ok) throw new Error('No se pudo cargar ' + nombreArchivo);
+  const texto = await res.text();
+  console.log('CSV parseado, longitud de texto:', texto.length);
+  return parsearCSV_(texto);
+}
+
+function parsearCSV_(texto) {
+  const filas = parsearCSVConComillas_(texto);
+  const headers = filas[0].map(h => h.trim());
+  return filas.slice(1).map(valores => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      obj[h] = normalizarValor_(h, valores[i]);
+    });
+    return obj;
+  });
+}
+
+// Parser CSV que respeta comillas dobles, incluyendo comas y saltos de linea dentro de un campo
+function parsearCSVConComillas_(texto) {
+  const filas = [];
+  let fila = [];
+  let campo = '';
+  let dentroDeComillas = false;
+
+  for (let i = 0; i < texto.length; i++) {
+    const char = texto[i];
+    const siguiente = texto[i + 1];
+
+    if (dentroDeComillas) {
+      if (char === '"' && siguiente === '"') {
+        campo += '"';
+        i++;
+      } else if (char === '"') {
+        dentroDeComillas = false;
+      } else {
+        campo += char;
+      }
+    } else {
+      if (char === '"') {
+        dentroDeComillas = true;
+      } else if (char === ',') {
+        fila.push(campo);
+        campo = '';
+      } else if (char === '\n' || (char === '\r' && siguiente === '\n')) {
+        if (char === '\r') i++;
+        fila.push(campo);
+        filas.push(fila);
+        fila = [];
+        campo = '';
+      } else if (char === '\r') {
+        // salto de linea viejo estilo Mac, ignorar
+      } else {
+        campo += char;
+      }
+    }
+  }
+
+  if (campo.length > 0 || fila.length > 0) {
+    fila.push(campo);
+    filas.push(fila);
+  }
+
+  return filas.filter(f => f.length > 1 || f[0] !== '');
+}
+
+const COLUMNAS_TEXTO = new Set(['ticker', 'shortName', 'sector', 'industry', 'rating', 'Ticker']);
+
+function normalizarValor_(columna, valor) {
+  if (valor === undefined || valor === '') return null;
+  const limpio = valor.trim();
+  if (COLUMNAS_TEXTO.has(columna)) return limpio;
+  const num = parseFloat(limpio.replace(',', '.'));
+  return isNaN(num) ? limpio : num;
+}
+
+// ===== CARGA INICIAL: universo completo (screener + avanzados) + los dos parquet de series =====
+export async function cargarTodosLosDatos() {
+  const [screener, precios, fundamentales] = await Promise.all([
+    cargarUniversoCompleto(),
+    cargarParquetCompleto('Actual_Stock.parquet'),
+    cargarParquetCompleto('stock_fundamentals_history.parquet')
+  ]);
+
+  return { screener, precios, fundamentales };
+}
