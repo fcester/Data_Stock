@@ -323,3 +323,35 @@ body {
 }
 .select-pill:hover { border-color: var(--azul-medio); }
 .select-pill:focus { border-color: var(--azul-claro); outline: none; background-color: white; }
+
+.tooltip-info {
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  border-bottom: 1px dashed var(--texto-secundario);
+  color: var(--texto-secundario);
+}
+.tooltip-info .tooltip-texto {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1A1D29;
+  color: white;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  width: 220px;
+  line-height: 1.4;
+  z-index: 50;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  pointer-events: none;
+}
+.tooltip-info:hover .tooltip-texto {
+  visibility: visible;
+  opacity: 1;
+}
+
