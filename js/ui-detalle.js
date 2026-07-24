@@ -109,7 +109,9 @@ function pintarDetalle_(ticker) {
     return;
   }
 
+  
   const serieTicker = obtenerSerieTicker_(cachePrecios, ticker);
+  const precioActual = serieTicker.length > 0 ? serieTicker[serieTicker.length - 1].value : (info.lastPrice ?? null);
   const kpisPrecio = calcularKpisPrecio_(serieTicker, serieTicker.length);
   const score = info.score_FINAL_adj !== null && info.score_FINAL_adj !== undefined ? info.score_FINAL_adj : 0;
 
@@ -160,7 +162,7 @@ function pintarDetalle_(ticker) {
       </div>
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
         <div>
-          <div class="precio-actual">$${info.lastPrice !== null && info.lastPrice !== undefined ? Number(info.lastPrice).toFixed(2) : 'N/D'}</div>
+          <div class="precio-actual">$${precioActual !== null ? Number(precioActual).toFixed(2) : 'N/D'}</div>
           <div class="precio-label">Precio actual</div>
         </div>
         <div style="text-align:center">
