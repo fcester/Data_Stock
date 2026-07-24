@@ -70,12 +70,25 @@ export async function cargarParquetCompleto(nombreArchivo) {
 // Con LEFT JOIN desde la dimension, ningun ticker desaparece aunque
 // le falten datos en alguna de las dos tablas de hechos -- en ese
 // caso simplemente trae NULL en esas columnas, en vez de ocultarlo.
+
 export async function cargarUniversoCompleto() {
   const urlTickers   = BASE_URL + 'Tickers.csv';
   const urlScreener  = BASE_URL + 'Stock_Screener_PRO.csv';
   const urlAvanzados = BASE_URL + 'Stock_Advanced_Metrics.parquet';
 
   const sql = `
+    WITH tickers_norm AS (
+      SELECT DISTINCT TRIM(CAST(ticker AS VARCHAR)) AS ticker
+      FROM read_csv_auto('${urlTickers}', trim_strings=True, all_varchar=False)
+    ),
+    screener_norm AS (
+      SELECT * EXCLUDE (ticker), TRIM(CAST(ticker AS VARCHAR)) AS ticker
+      FROM read_csv_auto('${urlScreener}', trim_strings=True, all_varchar=False)
+    ),
+    avanzados_norm AS (
+      SELECT * EXCLUDE (ticker), TRIM(CAST(ticker AS VARCHAR)) AS ticker
+      FROM read_parquet('${urlAvanzados}')
+    )
     SELECT
       t.ticker,
       s.shortName, s.sector, s.industry, s.rank, s.score_FINAL_adj,
@@ -89,7 +102,7 @@ export async function cargarUniversoCompleto() {
       s.revenueGrowth, s.earningsGrowth, s.debtToEquity, s.currentRatio, s.freeCashflow,
       s.revenue_trend, s.ebitda_trend, s.margin_trend, s.debt_trend, s.fcf_trend,
       s.earnings_consistency, s.revenue_r2, s.ebitda_r2, s.revenue_cagr, s.ebitda_cagr,
-      s.revenue_accel, s.margin_accel,
+      s.revenue_qoq, s.ebitda_qoq, s.revenue_accel, s.margin_accel,
       a.piotroski_score_adj, a.piotroski_tests_ok, a.piotroski_tests_total,
       a.sharpe_ratio, a.sortino_ratio, a.var_95_diario,
       a.analyst_upside, a.recommendationKey, a.recommendationMean, a.numberOfAnalystOpinions,
@@ -98,14 +111,15 @@ export async function cargarUniversoCompleto() {
       a.shortRatio, a.sharesShort,
       a.dividend_growth_streak, a.dividend_growth_avg,
       a.quickRatio, a.bookValue, a.pegRatio
-    FROM read_csv_auto('${urlTickers}') t
-    LEFT JOIN read_csv_auto('${urlScreener}') s ON t.ticker = s.ticker
-    LEFT JOIN read_parquet('${urlAvanzados}') a ON t.ticker = a.ticker
+    FROM tickers_norm t
+    LEFT JOIN screener_norm s  ON t.ticker = s.ticker
+    LEFT JOIN avanzados_norm a ON t.ticker = a.ticker
     ORDER BY s.rank NULLS LAST
   `;
 
   return consultarSQL(sql);
 }
+
 
 // ===== CARGA INICIAL: universo completo (screener + avanzados) + los dos parquet de series =====
 export async function cargarTodosLosDatos() {
