@@ -93,7 +93,9 @@
     </p>
     <div id="kpis-sugeridor" class="chips-kpi-grid"></div>
     <div style="display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap">
-      <label>Cantidad de activos: <input type="number" id="sugeridor-n-activos" min="2" max="15" value="10" style="width:70px"></label>
+      <label class="label-inline">Cantidad de activos:
+  <input type="number" id="sugeridor-n-activos" class="input-pill input-pill-chica" min="2" max="15" value="10">
+</label>
       <button class="btn-primary" id="btn-sugerir-cartera" style="margin:0">✨ Sugerir cartera</button>
     </div>
   </div>
@@ -138,7 +140,7 @@
 
   <div class="card">
     <h3>2. Monto total a invertir</h3>
-    <input type="number" id="monto-total" placeholder="Ej: 10000" min="0">
+    <input type="number" id="monto-total" class="input-pill" placeholder="Ej: 10000" min="0">
   </div>
 
   <div class="card">
