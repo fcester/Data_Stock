@@ -39,7 +39,8 @@ export function anchoBarraScore(score) {
   return Math.max(0, Math.min(100, valor * 10));
 }
 
-export function filaTicker(row) {
+
+export function filaTicker(row, totalTickers = null) {
   const score  = row.score_FINAL_adj !== null && row.score_FINAL_adj !== undefined ? row.score_FINAL_adj : 0;
   const precio = row.lastPrice !== null && row.lastPrice !== undefined ? '$' + Number(row.lastPrice).toFixed(2) : 'N/D';
 
@@ -49,9 +50,16 @@ export function filaTicker(row) {
   const industry  = escapeHtml(row.industry);
   const rating    = escapeHtml(row.rating);
 
+  const textoRank = totalTickers
+    ? `#${row.rank ?? '-'} <span class="rank-total">/ ${totalTickers}</span>`
+    : `#${row.rank ?? '-'}`;
+
   return `
     <div class="ranking-row" data-ticker="${ticker}">
-      <div class="rank-number">#${row.rank ?? '-'}</div>
+      <div class="rank-badge-col">
+        <div class="rank-number">${textoRank}</div>
+        <div class="badge ${claseBadge(row.rating)}">${rating}</div>
+      </div>
       <div class="ticker-cell">
         <div class="ticker-symbol">${ticker}</div>
         <div class="ticker-name">${shortName}</div>
@@ -62,7 +70,7 @@ export function filaTicker(row) {
         <div class="score-bar-bg"><div class="score-bar-fill" style="width:${anchoBarraScore(score)}%"></div></div>
         <div class="score-valor">${score.toFixed(2)}</div>
       </div>
-      <div class="badge ${claseBadge(row.rating)}">${rating}</div>
     </div>
   `;
 }
+
