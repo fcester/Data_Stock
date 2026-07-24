@@ -73,6 +73,7 @@
   </main>
 
   
+
 <div id="vista-cartera" class="vista oculto">
   <div class="section-header">
     <button class="btn-secondary" id="btn-volver-home-cartera">← Volver</button>
@@ -90,16 +91,32 @@
     <p style="color:var(--texto-secundario);font-size:0.85rem;margin-bottom:10px">
       Elegí en base a qué KPIs querés priorizar los activos. El sistema arma una cartera diversificada por sector.
     </p>
-    <div id="kpis-sugeridor" class="selects-fila"></div>
-    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">
+    <div id="kpis-sugeridor" class="chips-kpi-grid"></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap">
       <label>Cantidad de activos: <input type="number" id="sugeridor-n-activos" min="2" max="15" value="10" style="width:70px"></label>
-      <button class="btn-secondary" id="btn-sugerir-cartera">Sugerir cartera</button>
+      <button class="btn-primary" id="btn-sugerir-cartera" style="margin:0">✨ Sugerir cartera</button>
     </div>
   </div>
 
   <div class="card">
     <h3>1. Seleccioná tus activos (máximo 15)</h3>
-    <input type="text" id="buscador-tabla-cartera" placeholder="Buscar por ticker, empresa, sector o industria...">
+
+    <div class="filtros-bar" style="box-shadow:none;padding:0;margin-bottom:14px">
+      <input type="text" id="buscador-tabla-cartera" placeholder="Buscar por ticker o nombre de empresa...">
+      <div class="selects-fila">
+        <select id="cartera-filtro-sector" class="select-pill"></select>
+        <select id="cartera-filtro-industry" class="select-pill"></select>
+        <select id="cartera-filtro-rating" class="select-pill">
+          <option value="Todos">Todos los ratings</option>
+          <option value="Excelente">Excelente</option>
+          <option value="Buena">Buena</option>
+          <option value="Neutral">Neutral</option>
+          <option value="Débil">Débil</option>
+          <option value="Evitar">Evitar</option>
+        </select>
+      </div>
+    </div>
+
     <div class="contador-seleccion">Seleccionados: <span id="contador-seleccionados">0</span> / 15</div>
     <div class="tabla-cartera-scroll">
       <table class="tabla-activos-cartera" id="tabla-seleccion-cartera">
@@ -126,22 +143,22 @@
 
   <div class="card">
     <h3>3. Método de ponderación</h3>
-    <div class="metodos-grid">
-      <div class="metodo-card" id="metodo-diversificacion" data-metodo="diversificacion">
+    <div class="metodos-grid-nuevo">
+      <button type="button" class="metodo-btn" id="metodo-diversificacion" data-metodo="diversificacion">
         <div class="metodo-icono">⚖</div>
         <div class="metodo-nombre">Diversificación</div>
         <div class="metodo-desc">Mismo peso para cada activo, sin importar sector</div>
-      </div>
-      <div class="metodo-card" id="metodo-equilibrado" data-metodo="equilibrado">
+      </button>
+      <button type="button" class="metodo-btn" id="metodo-equilibrado" data-metodo="equilibrado">
         <div class="metodo-icono">🧭</div>
         <div class="metodo-nombre">Equilibrado</div>
-        <div class="metodo-desc">Reparte por sector e industria antes que por activo. No reduce necesariamente el riesgo, solo la concentración temática.</div>
-      </div>
-      <div class="metodo-card" id="metodo-customizable" data-metodo="customizable">
+        <div class="metodo-desc">Reparte por sector e industria. No reduce necesariamente el riesgo, solo la concentración temática.</div>
+      </button>
+      <button type="button" class="metodo-btn" id="metodo-customizable" data-metodo="customizable">
         <div class="metodo-icono">🎛</div>
         <div class="metodo-nombre">Customizable</div>
         <div class="metodo-desc">Vos asignás el % de cada activo manualmente</div>
-      </div>
+      </button>
     </div>
     <div id="tabla-pesos-manuales" class="oculto"></div>
   </div>
