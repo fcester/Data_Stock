@@ -100,6 +100,13 @@ body {
   .kpis-grid { grid-template-columns: repeat(5, 1fr); }
 }
 
+.kpis-grid-compacta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+
 .kpi-card {
   background: var(--card-bg);
   border-radius: 16px;
