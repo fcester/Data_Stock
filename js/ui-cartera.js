@@ -4,7 +4,7 @@ import { calcularCartera, sugerirCartera } from './stats-cartera.js';
 
 const MAX_CARTERA = 15;
 const KPIS_SUGERIDOR = [
-  { key: 'score_FINAL_adj', label: 'Score Fundamental General' },
+  { key: 'score_FINAL_adj', label: 'Score Fundamental' },
   { key: 'sharpe_ratio', label: 'Sharpe Ratio' },
   { key: 'sortino_ratio', label: 'Sortino Ratio' },
   { key: 'piotroski_score_adj', label: 'Piotroski (salud financiera)' },
@@ -15,23 +15,30 @@ const KPIS_SUGERIDOR = [
 let cacheUniverso = [];
 let cachePrecios = [];
 let cacheTablaCartera = [];
+let arbolSectoresCache = {};
+let filtroCartera = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '' };
 let seleccionCarteraMap = {};
 let metodoSeleccionado = null;
 let ordenActivo = { columna: null, direccion: 'asc' };
 let kpisSugeridorElegidos = new Set();
 
+// ===== SUGERIDOR: chips en vez de checkbox =====
 function pintarSelectorKpisSugeridor_() {
   const cont = document.getElementById('kpis-sugeridor');
   cont.innerHTML = KPIS_SUGERIDOR.map(k => `
-    <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem">
-      <input type="checkbox" class="kpi-sugeridor-check" value="${k.key}"> ${k.label}
-    </label>
+    <button type="button" class="chip-kpi" data-kpi="${k.key}">${k.label}</button>
   `).join('');
 
-  cont.querySelectorAll('.kpi-sugeridor-check').forEach(chk => {
-    chk.addEventListener('change', (e) => {
-      if (e.target.checked) kpisSugeridorElegidos.add(e.target.value);
-      else kpisSugeridorElegidos.delete(e.target.value);
+  cont.querySelectorAll('.chip-kpi').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const kpi = chip.dataset.kpi;
+      if (kpisSugeridorElegidos.has(kpi)) {
+        kpisSugeridorElegidos.delete(kpi);
+        chip.classList.remove('activo');
+      } else {
+        kpisSugeridorElegidos.add(kpi);
+        chip.classList.add('activo');
+      }
     });
   });
 }
@@ -60,17 +67,60 @@ function ejecutarSugerencia_() {
   }
 }
 
-function cargarTablaCartera_(query) {
-  const q = (query || '').trim().toUpperCase();
-  cacheTablaCartera = !q ? cacheUniverso : cacheUniverso.filter(r =>
-    (r.ticker || '').toUpperCase().includes(q) ||
-    (r.shortName || '').toUpperCase().includes(q) ||
-    (r.sector || '').toUpperCase().includes(q) ||
-    (r.industry || '').toUpperCase().includes(q)
-  );
+// ===== FILTROS tipo Screener (sector/industria dependientes + rating + busqueda) =====
+function construirArbolSectorIndustria_(lista) {
+  const arbol = {};
+  lista.forEach(r => {
+    const sector = r.sector || 'Sin sector';
+    const industria = r.industry || 'Sin industria';
+    if (!arbol[sector]) arbol[sector] = new Set();
+    arbol[sector].add(industria);
+  });
+  const resultado = {};
+  Object.keys(arbol).sort().forEach(s => { resultado[s] = Array.from(arbol[s]).sort(); });
+  return resultado;
+}
+
+function poblarSelectsFiltroCartera_() {
+  const selectSector = document.getElementById('cartera-filtro-sector');
+  selectSector.innerHTML = '<option value="Todos">Todos los sectores</option>' +
+    Object.keys(arbolSectoresCache).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+  actualizarOpcionesIndustriaCartera_('Todos');
+}
+
+function actualizarOpcionesIndustriaCartera_(sectorSeleccionado) {
+  const selectIndustry = document.getElementById('cartera-filtro-industry');
+  let industrias = [];
+  if (sectorSeleccionado === 'Todos') {
+    const todasSet = new Set();
+    Object.values(arbolSectoresCache).forEach(lista => lista.forEach(i => todasSet.add(i)));
+    industrias = Array.from(todasSet).sort();
+  } else {
+    industrias = (arbolSectoresCache[sectorSeleccionado] || []).slice().sort();
+  }
+  selectIndustry.innerHTML = '<option value="Todas">Todas las industrias</option>' +
+    industrias.map(i => `<option value="${i}">${i}</option>`).join('');
+}
+
+function aplicarFiltrosCartera_() {
+  let resultado = [...cacheUniverso];
+
+  if (filtroCartera.sector !== 'Todos') resultado = resultado.filter(r => r.sector === filtroCartera.sector);
+  if (filtroCartera.industry !== 'Todas') resultado = resultado.filter(r => r.industry === filtroCartera.industry);
+  if (filtroCartera.rating !== 'Todos') resultado = resultado.filter(r => r.rating === filtroCartera.rating);
+  if (filtroCartera.busqueda) {
+    const q = filtroCartera.busqueda.toUpperCase();
+    resultado = resultado.filter(r =>
+      (r.ticker || '').toUpperCase().includes(q) ||
+      (r.shortName || '').toUpperCase().includes(q)
+    );
+  }
+
+  cacheTablaCartera = resultado;
   renderizarTablaCarteraOrdenada();
 }
 
+// ===== TABLA ORDENABLE =====
 function ordenarTablaCartera_(columna) {
   if (ordenActivo.columna === columna) {
     ordenActivo.direccion = ordenActivo.direccion === 'asc' ? 'desc' : 'asc';
@@ -104,13 +154,18 @@ function renderizarTablaCarteraOrdenada() {
   }
 
   const body = document.getElementById('tabla-seleccion-cartera-body');
+
+  if (lista.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--texto-secundario);padding:20px">No hay activos que coincidan con estos filtros.</td></tr>';
+    actualizarContadorSeleccion_();
+    return;
+  }
+
   body.innerHTML = lista.map(t => {
     const seleccionado = !!seleccionCarteraMap[t.ticker];
     return `
       <tr class="${seleccionado ? 'seleccionada' : ''}">
-        <td class="fila-checkbox">
-          <input type="checkbox" data-ticker="${escapeHtml(t.ticker)}" ${seleccionado ? 'checked' : ''}>
-        </td>
+        <td class="fila-checkbox"><input type="checkbox" data-ticker="${escapeHtml(t.ticker)}" ${seleccionado ? 'checked' : ''}></td>
         <td><strong>${escapeHtml(t.ticker)}</strong></td>
         <td>${escapeHtml(t.shortName)}</td>
         <td>${escapeHtml(t.sector)}</td>
@@ -152,10 +207,11 @@ function obtenerSeleccionArray_() {
   return Object.keys(seleccionCarteraMap);
 }
 
+// ===== METODO DE PONDERACION (fix: ahora son <button>, con estado visible claro) =====
 function seleccionarMetodo_(metodo) {
   metodoSeleccionado = metodo;
-  ['diversificacion', 'equilibrado', 'customizable'].forEach(m => {
-    document.getElementById('metodo-' + m).classList.toggle('activo', m === metodo);
+  document.querySelectorAll('.metodo-btn').forEach(btn => {
+    btn.classList.toggle('activo', btn.dataset.metodo === metodo);
   });
 
   const tablaPesos = document.getElementById('tabla-pesos-manuales');
@@ -180,15 +236,12 @@ function pintarTablaPesosManuales_() {
     ${tickers.map(tk => `
       <div class="tabla-pesos-row">
         <span>${escapeHtml(tk)}</span>
-        <input type="number" class="peso-manual-input" data-ticker="${escapeHtml(tk)}"
-               value="${pesoSugerido}" min="0" max="100" step="0.1">
+        <input type="number" class="peso-manual-input" data-ticker="${escapeHtml(tk)}" value="${pesoSugerido}" min="0" max="100" step="0.1">
       </div>
     `).join('')}
     <div id="suma-pesos" class="suma-pesos"></div>
   `;
-  cont.querySelectorAll('.peso-manual-input').forEach(inp => {
-    inp.addEventListener('input', actualizarSumaPesos_);
-  });
+  cont.querySelectorAll('.peso-manual-input').forEach(inp => inp.addEventListener('input', actualizarSumaPesos_));
   actualizarSumaPesos_();
 }
 
@@ -202,6 +255,7 @@ function actualizarSumaPesos_() {
   cont.className = 'suma-pesos ' + (ok ? 'ok' : 'error');
 }
 
+// ===== CALCULO FINAL =====
 function calcularCarteraUI_() {
   const tickers = obtenerSeleccionArray_();
   if (tickers.length === 0) { alert('Seleccioná al menos un activo.'); return; }
@@ -213,9 +267,7 @@ function calcularCarteraUI_() {
   let pesosManuales = null;
   if (metodoSeleccionado === 'customizable') {
     pesosManuales = {};
-    document.querySelectorAll('.peso-manual-input').forEach(i => {
-      pesosManuales[i.dataset.ticker] = Number(i.value);
-    });
+    document.querySelectorAll('.peso-manual-input').forEach(i => { pesosManuales[i.dataset.ticker] = Number(i.value); });
     const suma = Object.values(pesosManuales).reduce((a, b) => a + b, 0);
     if (Math.abs(suma - 100) > 0.5) {
       alert(`Los porcentajes deben sumar 100%. Suma actual: ${suma.toFixed(1)}%`);
@@ -228,11 +280,8 @@ function calcularCarteraUI_() {
   const btn = document.getElementById('btn-calcular-cartera');
   btn.disabled = true;
   btn.textContent = 'Calculando...';
-  document.getElementById('resultado-cartera').innerHTML =
-    `<div class="skeleton skeleton-row" style="height:260px;margin-top:20px"></div>`;
+  document.getElementById('resultado-cartera').innerHTML = `<div class="skeleton skeleton-row" style="height:260px;margin-top:20px"></div>`;
 
-  // Calculo sincronico (no hay red de por medio, los datos ya estan en memoria),
-  // pero se envuelve en un setTimeout 0 para no bloquear el repintado del skeleton.
   setTimeout(() => {
     try {
       const resultado = calcularCartera(seleccionInfo, monto, metodoSeleccionado, pesosManuales, cachePrecios);
@@ -253,7 +302,7 @@ function pintarResultadoCartera_(res) {
   const corr = r.correlacionVsMercado;
   let lecturaCorr = 'Sin dato suficiente';
   if (corr !== null) {
-    if (corr > 0.7) lecturaCorr = 'Se mueve muy parecido al mercado general (canasta equal-weight de los tickers del universo)';
+    if (corr > 0.7) lecturaCorr = 'Se mueve muy parecido al mercado general (canasta equal-weight del universo)';
     else if (corr > 0.3) lecturaCorr = 'Se mueve moderadamente parecido al mercado';
     else if (corr > -0.3) lecturaCorr = 'Poca relación con el mercado general';
     else lecturaCorr = 'Tiende a moverse en sentido contrario al mercado';
@@ -301,19 +350,14 @@ function pintarResultadoCartera_(res) {
     <div class="card">
       <h3>Distribución de tu cartera</h3>
       <p style="color:var(--texto-secundario);font-size:0.85rem">Anillo externo: sector · Anillo interno: industria</p>
-      <div style="max-width:420px;margin:0 auto">
-        <canvas id="donut-cartera" height="320"></canvas>
-      </div>
+      <div style="max-width:420px;margin:0 auto"><canvas id="donut-cartera" height="320"></canvas></div>
     </div>
 
     <div class="card">
       <h3>Detalle por activo</h3>
       <table class="tabla-activos-cartera">
         <thead>
-          <tr>
-            <th>Ticker</th><th>Sector / Industria</th><th>Peso</th><th>Monto</th>
-            <th>Rating</th><th>Volatilidad</th><th>Rend. YTD</th><th>Max Drawdown</th>
-          </tr>
+          <tr><th>Ticker</th><th>Sector / Industria</th><th>Peso</th><th>Monto</th><th>Rating</th><th>Volatilidad</th><th>Rend. YTD</th><th>Max Drawdown</th></tr>
         </thead>
         <tbody>
           ${activos.map(a => `
@@ -332,7 +376,6 @@ function pintarResultadoCartera_(res) {
       </table>
     </div>
   `;
-
   pintarDonutsCartera_(activos);
 }
 
@@ -344,9 +387,7 @@ function pintarDonutsCartera_(activos) {
   activos.forEach(a => { gruposSector[a.sector] = (gruposSector[a.sector] || 0) + a.peso; });
 
   const sectoresOrdenados = Object.keys(gruposSector);
-  const industriaData = [];
-  const industriaLabels = [];
-  const industriaColores = [];
+  const industriaData = [], industriaLabels = [], industriaColores = [];
 
   sectoresOrdenados.forEach((sector, idxSector) => {
     const industriasDeEsteSector = {};
@@ -367,18 +408,8 @@ function pintarDonutsCartera_(activos) {
     data: {
       labels: [...sectoresOrdenados, ...industriaLabels],
       datasets: [
-        {
-          label: 'Sector',
-          data: Object.values(gruposSector).map(v => (v * 100).toFixed(1)),
-          backgroundColor: sectoresOrdenados.map((_, i) => PALETA_DONUT[i % PALETA_DONUT.length]),
-          radius: '90%', weight: 1
-        },
-        {
-          label: 'Industria',
-          data: industriaData,
-          backgroundColor: industriaColores,
-          radius: '100%', weight: 1
-        }
+        { label: 'Sector', data: Object.values(gruposSector).map(v => (v * 100).toFixed(1)), backgroundColor: sectoresOrdenados.map((_, i) => PALETA_DONUT[i % PALETA_DONUT.length]), radius: '90%', weight: 1 },
+        { label: 'Industria', data: industriaData, backgroundColor: industriaColores, radius: '100%', weight: 1 }
       ]
     },
     options: {
@@ -394,20 +425,37 @@ export function inicializarCartera({ screener, precios }) {
   cacheUniverso = screener;
   cachePrecios = precios;
   cacheTablaCartera = screener;
+  arbolSectoresCache = construirArbolSectorIndustria_(screener);
 
   pintarSelectorKpisSugeridor_();
   document.getElementById('btn-sugerir-cartera').addEventListener('click', ejecutarSugerencia_);
 
+  poblarSelectsFiltroCartera_();
+  document.getElementById('cartera-filtro-sector').addEventListener('change', (e) => {
+    filtroCartera.sector = e.target.value;
+    filtroCartera.industry = 'Todas';
+    actualizarOpcionesIndustriaCartera_(e.target.value);
+    aplicarFiltrosCartera_();
+  });
+  document.getElementById('cartera-filtro-industry').addEventListener('change', (e) => {
+    filtroCartera.industry = e.target.value;
+    aplicarFiltrosCartera_();
+  });
+  document.getElementById('cartera-filtro-rating').addEventListener('change', (e) => {
+    filtroCartera.rating = e.target.value;
+    aplicarFiltrosCartera_();
+  });
   document.getElementById('buscador-tabla-cartera').addEventListener('input', (e) => {
-    cargarTablaCartera_(e.target.value);
+    filtroCartera.busqueda = e.target.value;
+    aplicarFiltrosCartera_();
   });
 
   document.querySelectorAll('.th-ordenable').forEach(th => {
     th.addEventListener('click', () => ordenarTablaCartera_(th.dataset.col));
   });
 
-  document.querySelectorAll('.metodo-card').forEach(card => {
-    card.addEventListener('click', () => seleccionarMetodo_(card.dataset.metodo));
+  document.querySelectorAll('.metodo-btn').forEach(btn => {
+    btn.addEventListener('click', () => seleccionarMetodo_(btn.dataset.metodo));
   });
 
   document.getElementById('btn-calcular-cartera').addEventListener('click', calcularCarteraUI_);
