@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -21,6 +22,12 @@ MAX_WORKERS     = 10
 MAX_RETRIES     = 2
 MICROCAP_THRESHOLD = 300_000_000
 
+# ---- NUEVO: archivo separado, no toca nada de lo que ya usa Power BI ----
+ADVANCED_METRICS_FILE = "Stock_Advanced_Metrics.parquet"
+RISK_FREE_RATE_ANUAL  = 0.04     # proxy tasa libre de riesgo (ej. T-Bill 3m), ajustable a mano
+MIN_OBS_RATIOS_RIESGO = 20       # observaciones minimas para Sharpe/Sortino/VaR confiables
+DIVIDENDS_PERIOD      = "5y"     # ventana para historial de dividendos (llamada bulk, no per-ticker)
+
 HISTORICAL_ATTRIBUTES = [
     "shortName", "sector", "industry",
     "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
@@ -43,8 +50,22 @@ ATTRIBUTES = [
     "mostRecentQuarter"
 ]
 
+# ---- NUEVO: estos campos YA vienen dentro del mismo "info" que se descarga en el
+# paso 4 (yf.Ticker(t).info). No agregan ningun request HTTP nuevo por ticker,
+# solo leemos mas llaves del mismo diccionario que ya viaja por la red. ----
+ADVANCED_ATTRIBUTES = [
+    "totalAssets", "totalCurrentAssets", "totalCurrentLiabilities",
+    "returnOnAssets", "operatingCashflow",
+    "recommendationKey", "recommendationMean", "numberOfAnalystOpinions",
+    "targetMeanPrice", "targetHighPrice", "targetLowPrice",
+    "heldPercentInsiders", "heldPercentInstitutions",
+    "shortRatio", "sharesShort",
+    "grossMargins", "quickRatio", "bookValue", "pegRatio",
+    "totalCashPerShare", "trailingEps",
+]
+
 # ─────────────────────────────────────────────
-# 2. FUNCIONES PARQUET
+# 2. FUNCIONES PARQUET (sin cambios respecto al script original)
 # ─────────────────────────────────────────────
 def save_parquet_pbi(df_wide, filepath):
     df_long = (
@@ -88,17 +109,45 @@ def read_parquet_prices(filepath):
     return df.sort_index()
 
 # ─────────────────────────────────────────────
-# 3. PRECIOS (últimos 6 meses)
+# 3. PRECIOS (últimos 6 meses) — con try/except crítico
 # ─────────────────────────────────────────────
 print("📥 Descargando precios...")
-prices = yf.download(tickers, period="6mo", progress=False)["Close"]
+try:
+    prices = yf.download(tickers, period="6mo", progress=False)["Close"]
+except Exception as e:
+    raise SystemExit(f"❌ ERROR CRITICO descargando precios, se aborta el pipeline: {e}")
+
 if isinstance(prices, pd.Series):
     prices = prices.to_frame(name=tickers[0])
 last_price = prices.iloc[-1]
 print(f"   ✅ {len(prices)} fechas | {prices.shape[1]} tickers")
 
 # ─────────────────────────────────────────────
-# 4. FUNDAMENTALES — DESCARGA PARALELA CON RETRY
+# 3B. NUEVO: DIVIDENDOS + SPLITS EN BLOQUE (1 sola llamada para todos los tickers)
+# ─────────────────────────────────────────────
+print("\n📥 Descargando dividendos históricos (bloque único, no per-ticker)...")
+dividendos_por_ticker = {}
+try:
+    datos_acciones = yf.download(
+        tickers, period=DIVIDENDS_PERIOD, actions=True, progress=False
+    )
+    if "Dividends" in datos_acciones.columns.get_level_values(0):
+        div_wide = datos_acciones["Dividends"]
+        if isinstance(div_wide, pd.Series):
+            div_wide = div_wide.to_frame(name=tickers[0])
+        for t in div_wide.columns:
+            serie_t = div_wide[t].dropna()
+            serie_t = serie_t[serie_t > 0]
+            if len(serie_t) > 0:
+                serie_anual = serie_t.groupby(serie_t.index.year).sum()
+                dividendos_por_ticker[t] = serie_anual
+    print(f"   ✅ Dividendos obtenidos para {len(dividendos_por_ticker)} tickers.")
+except Exception as e:
+    print(f"   ⚠  No se pudieron descargar dividendos en bloque: {e}")
+    print("   Se continúa sin KPIs de crecimiento de dividendos (no es crítico).")
+
+# ─────────────────────────────────────────────
+# 4. FUNDAMENTALES — DESCARGA PARALELA CON RETRY (misma mecánica que ya tenían)
 # ─────────────────────────────────────────────
 def fetch_ticker_info(t, retries=MAX_RETRIES):
     for attempt in range(retries + 1):
@@ -117,6 +166,8 @@ def fetch_ticker_info(t, retries=MAX_RETRIES):
 print(f"\n🔄 Descargando fundamentales ({len(tickers)} tickers, {MAX_WORKERS} hilos)...")
 
 data          = {}
+info_completo = {}   # se guarda el dict info COMPLETO para reusarlo en KPIs avanzados
+                      # sin generar ni un solo request HTTP adicional
 new_hist_rows = []
 failed        = []
 fetch_date    = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
@@ -137,7 +188,8 @@ with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             failed.append(t)
             continue
 
-        data[t] = {a: info.get(a) for a in ATTRIBUTES}
+        data[t]          = {a: info.get(a) for a in ATTRIBUTES}
+        info_completo[t] = info
 
         report_ts = info.get("mostRecentQuarter")
         if report_ts:
@@ -156,7 +208,7 @@ with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
 print(f"   ✅ {len(data)} OK | ⚠  {len(failed)} fallidos")
 
 # ─────────────────────────────────────────────
-# 5. ELIMINAR TICKERS FALLIDOS DE Tickers.csv
+# 5. ELIMINAR TICKERS FALLIDOS DE Tickers.csv (sin cambios)
 # ─────────────────────────────────────────────
 if failed:
     print(f"\n🗑  Eliminando {len(failed)} tickers fallidos de {TICKERS_FILE}...")
@@ -170,7 +222,7 @@ if failed:
           f"{len(df_tickers_original)} → {len(df_tickers_clean)} tickers")
 
 # ─────────────────────────────────────────────
-# 6. GUARDAR HISTÓRICO DE FUNDAMENTALES
+# 6. GUARDAR HISTÓRICO DE FUNDAMENTALES (sin cambios)
 # ─────────────────────────────────────────────
 if new_hist_rows:
     df_new = pd.DataFrame(new_hist_rows)
@@ -187,21 +239,19 @@ else:
     print("\n✅ Histórico sin cambios — no hubo nuevos reportes trimestrales.")
 
 # ─────────────────────────────────────────────
-# 7. DATAFRAME SCREENER — CONVERSIÓN NUMÉRICA EXPLÍCITA
+# 7. DATAFRAME SCREENER — CONVERSIÓN NUMÉRICA EXPLÍCITA (sin cambios)
 # ─────────────────────────────────────────────
 df = pd.DataFrame.from_dict(data, orient="index").reset_index()
 df.rename(columns={"index": "ticker"}, inplace=True)
 
-# Columnas que deben ser string
 STR_COLS = ["ticker", "shortName", "sector", "industry"]
 
-# Forzar conversión numérica en todas las demás columnas
 for col in df.columns:
     if col not in STR_COLS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
 # ─────────────────────────────────────────────
-# 8. FEATURES DE PRECIO Y TÉCNICOS
+# 8. FEATURES DE PRECIO Y TÉCNICOS (sin cambios)
 # ─────────────────────────────────────────────
 df["lastPrice"]      = pd.to_numeric(df["ticker"].map(last_price), errors="coerce")
 df["priceVs50dMA"]   = df["lastPrice"] / df["fiftyDayAverage"]      - 1
@@ -214,7 +264,7 @@ df["position52w"]    = (
 ).clip(0, 1)
 
 # ─────────────────────────────────────────────
-# 9. FILTRO DE LIQUIDEZ POR MARKET CAP
+# 9. FILTRO DE LIQUIDEZ POR MARKET CAP (sin cambios)
 # ─────────────────────────────────────────────
 df["liquidity_flag"] = df["marketCap"] < MICROCAP_THRESHOLD
 n_microcap           = df["liquidity_flag"].sum()
@@ -222,19 +272,9 @@ if n_microcap > 0:
     print(f"\n⚠  {n_microcap} microcaps detectados (< $300M) — penalización aplicada.")
 
 # ─────────────────────────────────────────────
-# 10. KPIs HISTÓRICOS AMPLIADOS
+# 10. KPIs HISTÓRICOS AMPLIADOS (sin cambios respecto al script original)
 # ─────────────────────────────────────────────
 def compute_full_stats(values, periods_per_year=4):
-    """
-    Calcula estadísticas completas para una serie fundamental trimestral.
-
-    Retorna:
-      trend       — pendiente normalizada por la media (% por trimestre)
-      r2          — R² de la regresión (0-1, calidad/predictibilidad del trend)
-      cagr        — tasa de crecimiento anualizada compuesta
-      last_qoq    — último cambio trimestral (%)
-      acceleration — si el crecimiento se está acelerando (2ª mitad vs 1ª mitad)
-    """
     values = values.dropna().reset_index(drop=True)
     n      = len(values)
 
@@ -244,7 +284,6 @@ def compute_full_stats(values, periods_per_year=4):
     if n < 2:
         return out
 
-    # Último cambio QoQ
     v_prev = values.iloc[-2]
     v_last = values.iloc[-1]
     if v_prev != 0 and not np.isnan(v_prev):
@@ -253,31 +292,28 @@ def compute_full_stats(values, periods_per_year=4):
     if n < 3:
         return out
 
-    x                               = np.arange(n)
-    slope, _, r_val, _, _           = linregress(x, values)
-    mean_val                        = values.abs().mean()
-    out["r2"]                       = r_val ** 2
+    x                     = np.arange(n)
+    slope, _, r_val, _, _ = linregress(x, values)
+    mean_val              = values.abs().mean()
+    out["r2"]             = r_val ** 2
     if mean_val != 0:
         out["trend"] = slope / mean_val
 
-    # CAGR
     v_first = values.iloc[0]
     years   = (n - 1) / periods_per_year
     if v_first > 0 and v_last > 0 and years > 0:
         out["cagr"] = (v_last / v_first) ** (1 / years) - 1
 
-    # Aceleración: pendiente 2ª mitad vs 1ª mitad
     if n >= 6:
         mid    = n // 2
-        s1, *_ = linregress(np.arange(mid),       values.iloc[:mid])
-        s2, *_ = linregress(np.arange(n - mid),   values.iloc[mid:])
+        s1, *_ = linregress(np.arange(mid),     values.iloc[:mid])
+        s2, *_ = linregress(np.arange(n - mid), values.iloc[mid:])
         if mean_val != 0:
             out["acceleration"] = (s2 - s1) / abs(mean_val)
 
     return out
 
 def compute_consistency(values):
-    """Estabilidad de resultados: inverso del coeficiente de variación."""
     values = values.dropna()
     if len(values) < 3:
         return np.nan
@@ -287,7 +323,6 @@ def compute_consistency(values):
         return np.nan
     return 1 / (1 + std_val / abs(mean_val))
 
-# Métricas históricas a analizar: (columna_parquet, prefijo_kpi)
 HIST_METRICS = [
     ("totalRevenue",     "revenue"),
     ("ebitda",           "ebitda"),
@@ -297,10 +332,6 @@ HIST_METRICS = [
     ("netIncome",        "earnings"),
     ("returnOnEquity",   "roe"),
 ]
-
-# KPIs generados automáticamente por cada métrica:
-# {prefix}_trend | {prefix}_r2 | {prefix}_cagr | {prefix}_qoq | {prefix}_accel
-# + earnings_consistency (solo para netIncome)
 
 all_trend_kpis = []
 for _, prefix in HIST_METRICS:
@@ -338,13 +369,12 @@ if os.path.exists(HISTORICAL_FILE):
     df_trends = pd.DataFrame.from_dict(trend_results, orient="index").reset_index()
     df_trends.rename(columns={"index": "ticker"}, inplace=True)
 
-    # Conversión numérica explícita
     for col in df_trends.columns:
         if col != "ticker":
             df_trends[col] = pd.to_numeric(df_trends[col], errors="coerce")
 
-    df       = df.merge(df_trends, on="ticker", how="left")
-    n_hist   = df_trends.drop(columns="ticker").notna().any(axis=1).sum()
+    df     = df.merge(df_trends, on="ticker", how="left")
+    n_hist = df_trends.drop(columns="ticker").notna().any(axis=1).sum()
     print(f"\n📈 KPIs históricos calculados para {n_hist} tickers "
           f"({len(HIST_METRICS) * 5 + 1} KPIs por ticker).")
 else:
@@ -353,7 +383,7 @@ else:
     print("\n⚠  Sin histórico aún — KPIs de evolución en NaN.")
 
 # ─────────────────────────────────────────────
-# 11. WINSORIZATION + IMPUTACIÓN
+# 11. WINSORIZATION + IMPUTACIÓN (sin cambios)
 # ─────────────────────────────────────────────
 def winsorize(s):
     s = pd.to_numeric(s, errors="coerce")
@@ -376,14 +406,8 @@ def impute(df, col):
     return pd.to_numeric(s, errors="coerce")
 
 # ─────────────────────────────────────────────
-# 12. SCORING CONFIG
+# 12. SCORING CONFIG (sin cambios: no tocamos el modelo de scoring existente)
 # ─────────────────────────────────────────────
-#
-#  Cada categoría: { métrica: (inverse, peso_interno), "weight": peso_global }
-#  inverse=True  → menor valor es mejor
-#  inverse=False → mayor valor es mejor
-#  Suma de weights = 1.00 ✅
-#
 CONFIG = {
     "valuation": {
         "trailingPE":         (True,  0.25),
@@ -416,24 +440,19 @@ CONFIG = {
         "weight": 0.14
     },
     "fundamental_momentum": {
-        # Tendencias (qué dirección)
         "revenue_trend":  (False, 0.15),
         "ebitda_trend":   (False, 0.15),
         "margin_trend":   (False, 0.10),
         "debt_trend":     (True,  0.10),
         "fcf_trend":      (False, 0.08),
         "roe_trend":      (False, 0.07),
-        # Calidad del trend (qué tan predecible)
         "revenue_r2":     (False, 0.08),
         "ebitda_r2":      (False, 0.07),
-        # Crecimiento estructural
         "revenue_cagr":   (False, 0.08),
         "ebitda_cagr":    (False, 0.05),
-        # Aceleración reciente
         "revenue_accel":  (False, 0.04),
         "margin_accel":   (False, 0.03),
-        # Estabilidad
-        "earnings_consistency": (False, 0.00),  # en penalización, no scoring
+        "earnings_consistency": (False, 0.00),
         "weight": 0.24
     },
     "income": {
@@ -441,10 +460,9 @@ CONFIG = {
         "weight": 0.06
     }
 }
-# 0.16+0.16+0.12+0.12+0.14+0.24+0.06 = 1.00 ✅
 
 # ─────────────────────────────────────────────
-# 13. SCORING POR SECTOR
+# 13. SCORING POR SECTOR (sin cambios)
 # ─────────────────────────────────────────────
 def score(series, inverse):
     series = pd.to_numeric(series, errors="coerce")
@@ -467,10 +485,8 @@ for cat, cfg in CONFIG.items():
         if k not in df.columns:
             continue
 
-        # Imputar y asegurar tipo numérico
         df[k] = impute(df, k)
 
-        # Score relativo dentro del sector
         s = df.groupby("sector")[k].transform(lambda x: score(x, inverse))
         s = pd.to_numeric(s, errors="coerce")
 
@@ -487,7 +503,7 @@ for cat, cfg in CONFIG.items():
     )
 
 # ─────────────────────────────────────────────
-# 14. SCORE FINAL
+# 14. SCORE FINAL (sin cambios) + clip defensivo agregado
 # ─────────────────────────────────────────────
 cat_scores   = []
 total_weight = 0.0
@@ -505,25 +521,30 @@ df["score_FINAL"] = pd.to_numeric(
 
 # ─────────────────────────────────────────────
 # 15. PENALIZACIÓN POR DATOS FALTANTES + MICROCAP
+#     (agregado: clip final defensivo 0-10, no cambia el criterio original)
 # ─────────────────────────────────────────────
 valid        = df[all_metrics].apply(pd.to_numeric, errors="coerce").notna().sum(axis=1)
 completeness = valid / len(all_metrics)
 penalty      = completeness.clip(lower=0.3)
 
-df["data_completeness"]  = (completeness * 100).round(1)   # % para el reporte
-df["score_FINAL_adj"]    = pd.to_numeric(
+df["data_completeness"] = (completeness * 100).round(1)
+df["score_FINAL_adj"]   = pd.to_numeric(
     df["score_FINAL"] * (0.7 + 0.3 * penalty), errors="coerce"
 )
 
-# Penalización adicional microcaps
 df.loc[df["liquidity_flag"], "score_FINAL_adj"] = (
     df.loc[df["liquidity_flag"], "score_FINAL_adj"] * 0.85
 )
 
+df["score_FINAL_adj"] = df["score_FINAL_adj"].clip(lower=0, upper=10)
+
 # ─────────────────────────────────────────────
-# 16. RANKING + LABEL
+# 16. RANKING + LABEL — FIX: evita el IntCastingNaNError si hay NaN en score_FINAL_adj
 # ─────────────────────────────────────────────
-df["rank"] = df["score_FINAL_adj"].rank(ascending=False, method="min").astype(int)
+df["rank"] = df["score_FINAL_adj"].rank(ascending=False, method="min")
+if df["rank"].isna().any():
+    df["rank"] = df["rank"].fillna(df["rank"].max() + 1 if df["rank"].notna().any() else 1)
+df["rank"] = df["rank"].astype(int)
 
 def label(x):
     if pd.isna(x):    return "Sin datos"
@@ -536,7 +557,7 @@ def label(x):
 df["rating"] = df["score_FINAL_adj"].apply(label)
 
 # ─────────────────────────────────────────────
-# 17. OUTPUT SCREENER DIARIO
+# 17. OUTPUT SCREENER DIARIO (sin cambios, no se toca lo que usa Power BI)
 # ─────────────────────────────────────────────
 df.drop(columns=["mostRecentQuarter"], inplace=True, errors="ignore")
 
@@ -557,25 +578,21 @@ output_cols = [
     "revenueGrowth", "earningsGrowth",
     "debtToEquity", "currentRatio", "freeCashflow",
 ]
-
 output_cols = [c for c in output_cols if c in df.columns]
 
-# Snapshot actual (sobreescribe) — para PBI "estado de hoy"
 df[output_cols].to_csv("Stock_Screener_PRO.csv", index=False)
 print("✅ Stock_Screener_PRO.csv actualizado.")
 
 # ─────────────────────────────────────────────
-# 17B. HISTÓRICO DEL SCREENER — append con fecha
+# 17B. HISTÓRICO DEL SCREENER — append con fecha (sin cambios)
 # ─────────────────────────────────────────────
 SCREENER_HISTORY_FILE = "Stock_Screener_History.parquet"
 
-df_snapshot                = df[output_cols].copy()
+df_snapshot                  = df[output_cols].copy()
 df_snapshot["snapshot_date"] = fetch_date
 
 if os.path.exists(SCREENER_HISTORY_FILE):
     df_hist_screener = pd.read_parquet(SCREENER_HISTORY_FILE)
-
-    # Si ya existe un snapshot de hoy, lo reemplaza
     df_hist_screener = df_hist_screener[
         df_hist_screener["snapshot_date"] != fetch_date
     ]
@@ -598,13 +615,12 @@ print(f"📅 Stock_Screener_History.parquet actualizado: "
       f"{df_hist_screener['snapshot_date'].max()}")
 
 # ─────────────────────────────────────────────
-# 18. APPEND DIARIO → Actual_Stock.parquet
+# 18. APPEND DIARIO → Actual_Stock.parquet (sin cambios)
 # ─────────────────────────────────────────────
 if os.path.exists(PRICES_FILE):
     df_existente = read_parquet_prices(PRICES_FILE)
     start_date   = df_existente.index.min().strftime("%Y-%m-%d")
 
-    # Tickers nuevos → descargar histórico completo automáticamente
     new_tickers = [t for t in tickers if t not in df_existente.columns]
 
     if new_tickers:
@@ -635,7 +651,6 @@ if os.path.exists(PRICES_FILE):
         except Exception as e:
             print(f"   ⚠  Error descargando histórico de nuevos tickers: {e}")
 
-    # Fechas nuevas (6 meses) para todos los tickers
     todas_cols    = df_existente.columns.union(prices.columns)
     df_existente  = df_existente.reindex(columns=todas_cols)
     fechas_nuevas = prices.index.difference(df_existente.index)
@@ -658,8 +673,168 @@ print(f"💾 Parquet guardado: {len(df_long):,} filas | "
       f"{df_long['Ticker'].nunique()} tickers | "
       f"{df_long['Date'].min()} → {df_long['Date'].max()}")
 
+# ═══════════════════════════════════════════════════════════
+# 19. NUEVO BLOQUE — KPIs AVANZADOS (archivo separado)
+#     No modifica Stock_Screener_PRO.csv ni los parquet existentes.
+#     Reutiliza info_completo (ya descargado) y prices (ya descargado).
+# ═══════════════════════════════════════════════════════════
+print("\n" + "="*60)
+print("🧮 CALCULANDO KPIs AVANZADOS (archivo nuevo, separado de Power BI)")
+print("="*60)
+
+def calcular_piotroski_adj_(info):
+    """
+    Piotroski F-Score ADAPTADO (no el académico de 9 puntos).
+    Usa solo 6 tests posibles con datos de snapshot único (sin balance
+    de 2 años consecutivos, que requeriría .balance_sheet per-ticker).
+    Se normaliza sobre 6 aunque falten tests individuales, para no
+    penalizar por datos faltantes.
+    """
+    tests = {}
+    roa = info.get("returnOnAssets")
+    if roa is not None:
+        tests["roa_positivo"] = 1 if roa > 0 else 0
+    ocf = info.get("operatingCashflow")
+    if ocf is not None:
+        tests["ocf_positivo"] = 1 if ocf > 0 else 0
+    ni = info.get("netIncome")
+    if ocf is not None and ni is not None:
+        tests["ocf_mayor_ni"] = 1 if ocf > ni else 0
+    cr = info.get("currentRatio")
+    if cr is not None:
+        tests["current_ratio_sano"] = 1 if cr > 1 else 0
+    qr = info.get("quickRatio")
+    if qr is not None:
+        tests["quick_ratio_sano"] = 1 if qr > 1 else 0
+    gm = info.get("grossMargins")
+    if gm is not None:
+        tests["margen_bruto_positivo"] = 1 if gm > 0 else 0
+
+    n_tests = len(tests)
+    if n_tests == 0:
+        return np.nan, 0, 0
+    score_raw     = sum(tests.values())
+    score_sobre_6 = round((score_raw / n_tests) * 6, 2)
+    return score_sobre_6, score_raw, n_tests
+
+def calcular_ratios_riesgo_(retornos_diarios, rf_anual=RISK_FREE_RATE_ANUAL,
+                             min_obs=MIN_OBS_RATIOS_RIESGO):
+    """
+    Sharpe, Sortino y VaR historico 95% a partir de retornos diarios ya
+    calculados sobre los precios que YA se descargaron en el paso 3.
+    Cero llamadas de red adicionales.
+    """
+    out = dict(sharpe=np.nan, sortino=np.nan, var_95=np.nan)
+    retornos = pd.Series(retornos_diarios).dropna()
+    if len(retornos) < min_obs:
+        return out
+
+    ret_prom_anual = retornos.mean() * 252
+    vol_anual      = retornos.std() * np.sqrt(252)
+    if vol_anual and vol_anual > 0:
+        out["sharpe"] = (ret_prom_anual - rf_anual) / vol_anual
+
+    negativos = retornos[retornos < 0]
+    if len(negativos) >= 2:
+        downside_dev_anual = negativos.std() * np.sqrt(252)
+        if downside_dev_anual and downside_dev_anual > 0:
+            out["sortino"] = (ret_prom_anual - rf_anual) / downside_dev_anual
+
+    out["var_95"] = retornos.quantile(0.05)
+    return out
+
+def calcular_dividend_growth_(serie_dividendos_por_anio):
+    """
+    A partir de la serie de dividendos anuales (ya descargada en bloque
+    en el paso 3B), calcula años consecutivos de aumento y el crecimiento
+    promedio interanual.
+    """
+    serie = serie_dividendos_por_anio.dropna()
+    if len(serie) < 2:
+        return 0, np.nan
+    streak  = 0
+    valores = serie.values
+    for i in range(len(valores) - 1, 0, -1):
+        if valores[i] > valores[i - 1]:
+            streak += 1
+        else:
+            break
+    crecimiento_prom = serie.pct_change().replace([np.inf, -np.inf], np.nan).dropna().mean()
+    return streak, crecimiento_prom
+
+# ---- Loop principal de KPIs avanzados: reusa info_completo y prices, sin red nueva ----
+filas_avanzadas = []
+
+for t in data.keys():   # solo tickers que ya tuvieron descarga exitosa en el paso 4
+    info = info_completo.get(t, {})
+    fila = {"ticker": t}
+
+    # -- campos "gratis" del mismo info ya descargado --
+    for attr in ADVANCED_ATTRIBUTES:
+        fila[attr] = info.get(attr)
+
+    # -- Piotroski adaptado --
+    score_p, raw_p, n_tests_p = calcular_piotroski_adj_(info)
+    fila["piotroski_score_adj"]   = score_p
+    fila["piotroski_tests_ok"]    = raw_p
+    fila["piotroski_tests_total"] = n_tests_p
+
+    # -- analyst upside --
+    target_mean = info.get("targetMeanPrice")
+    precio_actual = last_price.get(t) if hasattr(last_price, "get") else None
+    if precio_actual is None and t in last_price.index:
+        precio_actual = last_price[t]
+    if target_mean and precio_actual and precio_actual > 0:
+        fila["analyst_upside"] = (target_mean / precio_actual) - 1
+    else:
+        fila["analyst_upside"] = np.nan
+
+    # -- ratios de riesgo (Sharpe, Sortino, VaR) usando precios ya descargados --
+    if t in prices.columns:
+        serie_precios = prices[t].dropna()
+        retornos_t    = serie_precios.pct_change().dropna()
+        ratios        = calcular_ratios_riesgo_(retornos_t)
+        fila["sharpe_ratio"]  = ratios["sharpe"]
+        fila["sortino_ratio"] = ratios["sortino"]
+        fila["var_95_diario"] = ratios["var_95"]
+    else:
+        fila["sharpe_ratio"]  = np.nan
+        fila["sortino_ratio"] = np.nan
+        fila["var_95_diario"] = np.nan
+
+    # -- dividend growth streak (usa el bloque descargado en paso 3B) --
+    if t in dividendos_por_ticker:
+        streak, crecimiento = calcular_dividend_growth_(dividendos_por_ticker[t])
+        fila["dividend_growth_streak"] = streak
+        fila["dividend_growth_avg"]    = crecimiento
+    else:
+        fila["dividend_growth_streak"] = 0
+        fila["dividend_growth_avg"]    = np.nan
+
+    filas_avanzadas.append(fila)
+
+df_avanzado = pd.DataFrame(filas_avanzadas)
+
+# Conversión numérica explícita (mismo patrón defensivo que el resto del script)
+STR_COLS_AVANZADO = ["ticker", "recommendationKey"]
+for col in df_avanzado.columns:
+    if col not in STR_COLS_AVANZADO:
+        df_avanzado[col] = pd.to_numeric(df_avanzado[col], errors="coerce")
+
+df_avanzado.to_parquet(ADVANCED_METRICS_FILE, index=False)
+
+print(f"✅ {ADVANCED_METRICS_FILE} generado: "
+      f"{len(df_avanzado)} tickers | {len(df_avanzado.columns)} columnas")
+print(f"   Piotroski adaptado calculado para "
+      f"{df_avanzado['piotroski_score_adj'].notna().sum()} tickers")
+print(f"   Sharpe/Sortino/VaR calculado para "
+      f"{df_avanzado['sharpe_ratio'].notna().sum()} tickers "
+      f"(requiere ≥{MIN_OBS_RATIOS_RIESGO} observaciones)")
+print(f"   Dividend growth streak disponible para "
+      f"{(df_avanzado['dividend_growth_streak'] > 0).sum()} tickers")
+
 # ─────────────────────────────────────────────
-# 19. RESUMEN CONSOLA
+# 20. RESUMEN CONSOLA (screener original, sin cambios)
 # ─────────────────────────────────────────────
 print("\n" + "="*60)
 print("🏆 TOP 15 — RANKING FINAL")
