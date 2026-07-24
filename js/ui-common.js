@@ -145,3 +145,25 @@ export function renderKpisGlobales(listaTickers) {
   `;
 }
 
+// Agrupa la serie "long" de precios (Date, Ticker, Value) en un mapa por ticker,
+// ordenada por fecha ascendente. Reusable en Home, Screener, Detalle y Cartera.
+export function agruparPreciosPorTicker(precios) {
+  const mapa = {};
+  precios.forEach(p => {
+    const t = p.Ticker;
+    if (!mapa[t]) mapa[t] = [];
+    mapa[t].push(p);
+  });
+  Object.keys(mapa).forEach(t => {
+    mapa[t].sort((a, b) => new Date(a.Date) - new Date(b.Date));
+  });
+  return mapa;
+}
+
+// Devuelve el ultimo precio DISPONIBLE de un ticker (fallback robusto: no depende
+// de la columna lastPrice del CSV, que puede llegar vacia por timing del pipeline).
+export function obtenerUltimoPrecio(preciosPorTicker, ticker) {
+  const serie = preciosPorTicker[ticker];
+  if (!serie || serie.length === 0) return null;
+  return serie[serie.length - 1].Value;
+}
