@@ -40,6 +40,7 @@ export function anchoBarraScore(score) {
 }
 
 
+
 export function filaTicker(row, totalTickers = null) {
   const score  = row.score_FINAL_adj !== null && row.score_FINAL_adj !== undefined ? row.score_FINAL_adj : 0;
   const precio = row.lastPrice !== null && row.lastPrice !== undefined ? '$' + Number(row.lastPrice).toFixed(2) : 'N/D';
@@ -54,12 +55,10 @@ export function filaTicker(row, totalTickers = null) {
     ? `#${row.rank ?? '-'} <span class="rank-total">/ ${totalTickers}</span>`
     : `#${row.rank ?? '-'}`;
 
+  // Badge de vuelta en su posicion original: al final de la fila, como estaba antes.
   return `
     <div class="ranking-row" data-ticker="${ticker}">
-      <div class="rank-badge-col">
-        <div class="rank-number">${textoRank}</div>
-        <div class="badge ${claseBadge(row.rating)}">${rating}</div>
-      </div>
+      <div class="rank-number">${textoRank}</div>
       <div class="ticker-cell">
         <div class="ticker-symbol">${ticker}</div>
         <div class="ticker-name">${shortName}</div>
@@ -70,6 +69,7 @@ export function filaTicker(row, totalTickers = null) {
         <div class="score-bar-bg"><div class="score-bar-fill" style="width:${anchoBarraScore(score)}%"></div></div>
         <div class="score-valor">${score.toFixed(2)}</div>
       </div>
+      <div class="badge ${claseBadge(row.rating)}">${rating}</div>
     </div>
   `;
 }
@@ -84,8 +84,6 @@ export function interpretarScoreMercado(score) {
   return 'Fundamentos muy débiles: la mayoría de los activos de este segmento puntúan bajo en el modelo';
 }
 
-// Extrae la logica de calculo de KPIs (antes vivia solo dentro de pintarKPIs en ui-home.js)
-// para poder reusarla tanto en Home como en el Screener filtrado.
 export function calcularKpisAgregados(listaTickers) {
   const distribucionRating = {};
   let sumaScore = 0, contScore = 0, sumaPrecio = 0, contPrecio = 0;
@@ -112,7 +110,8 @@ export function calcularKpisAgregados(listaTickers) {
   };
 }
 
-// Genera el HTML de las 5 kpi-card, reusable en Home y en Screener completo.
+// Tooltip real: el texto explicativo esta OCULTO por defecto (ver CSS),
+// y solo aparece como popup al pasar el mouse sobre el icono subrayado "ℹ Score promedio".
 export function renderKpisGlobales(listaTickers) {
   const k = calcularKpisAgregados(listaTickers);
   const scoreTexto = k.scorePromedio !== null ? k.scorePromedio.toFixed(2) : 'N/D';
@@ -125,13 +124,12 @@ export function renderKpisGlobales(listaTickers) {
       <div class="kpi-label">Tickers en este segmento</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-valor">
-        ${scoreTexto}<span style="font-size:0.9rem;color:var(--texto-secundario)"> /10</span>
-        <span class="tooltip-info" style="font-size:0.8rem;margin-left:4px">ℹ
+      <div class="kpi-valor">${scoreTexto}<span style="font-size:0.9rem;color:var(--texto-secundario)"> /10</span></div>
+      <div class="kpi-label">
+        <span class="tooltip-info">Score promedio del segmento
           <span class="tooltip-texto">${interpretacion}</span>
         </span>
       </div>
-      <div class="kpi-label">Score promedio del segmento</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-valor">${precioTexto}</div>
