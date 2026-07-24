@@ -1,23 +1,13 @@
 
-export function inicializarHome({ screener }) {
-  pintarKPIs(screener);
-  pintarTop10(screener);
-}
+import { claseBadge, filaTicker, flechaRendimiento } from './ui-common.js';
 
-function claseBadge(rating) {
-  const mapa = {
-    'Excelente': 'badge-excelente',
-    'Buena': 'badge-buena',
-    'Neutral': 'badge-neutral',
-    'Débil': 'badge-debil',
-    'Evitar': 'badge-evitar'
-  };
-  return mapa[rating] || 'badge-neutral';
+export function inicializarHome({ screener, precios }) {
+  pintarKPIs(screener);
+  pintarTop10(screener, precios);
 }
 
 function pintarKPIs(screener) {
   const totalTickers = screener.length;
-
   const distribucionRating = {};
   let sumaScore = 0, contScore = 0, sumaPrecio = 0, contPrecio = 0;
 
@@ -34,7 +24,7 @@ function pintarKPIs(screener) {
     }
   });
 
-  const scorePromedio = contScore > 0 ? sumaScore / contScore : 0;
+  const scorePromedio  = contScore > 0 ? sumaScore / contScore : 0;
   const precioPromedio = contPrecio > 0 ? sumaPrecio / contPrecio : 0;
   const buenas = distribucionRating['Buena'] || 0;
   const evitar = distribucionRating['Evitar'] || 0;
@@ -63,32 +53,54 @@ function pintarKPIs(screener) {
   `;
 }
 
-function filaTicker(row) {
-  const score = row.score_FINAL_adj !== null && row.score_FINAL_adj !== undefined ? row.score_FINAL_adj : 0;
-  const precio = row.lastPrice !== null && row.lastPrice !== undefined ? '$' + Number(row.lastPrice).toFixed(2) : 'N/D';
-  return `
-    <div class="ranking-row">
-      <div class="rank-number">#${row.rank}</div>
-      <div class="ticker-cell">
-        <div class="ticker-symbol">${row.ticker}</div>
-        <div class="ticker-name">${row.shortName}</div>
-        <div class="ticker-meta">${row.sector} · ${row.industry}</div>
-      </div>
-      <div class="precio-mini">${precio}</div>
-      <div class="score-mobile-row">
-        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${score * 10}%"></div></div>
-        <div class="score-valor">${score.toFixed(2)}</div>
-      </div>
-      <div class="badge ${claseBadge(row.rating)}">${row.rating}</div>
-    </div>
-  `;
+// Agrupa la serie "long" de precios (Date, Ticker, Value) por ticker,
+// ordenada por fecha, para poder calcular rendimientos sin re-ordenar cada vez.
+function agruparPreciosPorTicker_(precios) {
+  const mapa = {};
+  precios.forEach(p => {
+    const t = p.Ticker;
+    if (!mapa[t]) mapa[t] = [];
+    mapa[t].push(p);
+  });
+  Object.keys(mapa).forEach(t => {
+    mapa[t].sort((a, b) => new Date(a.Date) - new Date(b.Date));
+  });
+  return mapa;
 }
 
-function pintarTop10(screener) {
+// Rendimiento contra ~21 dias habiles atras (aprox 1 mes de trading),
+// mismo criterio que ya usaban en Apps Script para rendimiento_1m.
+function calcularRendimiento1m_(serieOrdenada, diasHabiles = 21) {
+  if (!serieOrdenada || serieOrdenada.length < 2) return null;
+  const valores = serieOrdenada.map(p => p.Value);
+  const actual = valores[valores.length - 1];
+  const idxHace1m = Math.max(0, valores.length - 1 - diasHabiles);
+  const hace1m = valores[idxHace1m];
+  if (!hace1m) return null;
+  return ((actual - hace1m) / hace1m) * 100;
+}
+
+function pintarTop10(screener, precios) {
+  const preciosPorTicker = agruparPreciosPorTicker_(precios);
+
   const top10 = [...screener]
     .filter(r => r.score_FINAL_adj !== null && r.score_FINAL_adj !== undefined)
     .sort((a, b) => b.score_FINAL_adj - a.score_FINAL_adj)
     .slice(0, 10);
 
-  document.getElementById('top10-container').innerHTML = top10.map(filaTicker).join('');
+  document.getElementById('top10-container').innerHTML = top10.map(row => {
+    const rendimiento1m = calcularRendimiento1m_(preciosPorTicker[row.ticker]);
+    return filaTickerConRendimiento_(row, rendimiento1m);
+  }).join('');
+}
+
+// Extiende filaTicker() del común agregando la línea de rendimiento 1m debajo del precio.
+function filaTickerConRendimiento_(row, rendimiento1m) {
+  const base = filaTicker(row);
+  const rendimientoHtml = `<div class="ticker-rendimiento-1m">${flechaRendimiento(rendimiento1m)}</div>`;
+  // Inserta el rendimiento justo antes del cierre del bloque "precio-mini"
+  return base.replace(
+    /(<div class="precio-mini">[^<]*<\/div>)/,
+    `$1${rendimientoHtml}`
+  );
 }
