@@ -1,4 +1,3 @@
-
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
@@ -41,11 +40,20 @@ async function asegurarHttpfs_(conn) {
   console.log('httpfs listo');
 }
 
+// Recorre las columnas de una fila y convierte cualquier BigInt a Number.
+// DuckDB-WASM devuelve columnas enteras (ej. "rank") como BigInt, lo cual
+// rompe operaciones normales de JS como .sort() o restas con Number comun.
+function normalizarBigInts_(fila) {
+  const normalizada = {};
+  for (const clave in fila) {
+    const valor = fila[clave];
+    normalizada[clave] = typeof valor === 'bigint' ? Number(valor) : valor;
+  }
+  return normalizada;
+}
 
 // Ejecuta cualquier SQL, asegurando que httpfs este disponible antes de correr la query.
-// Normaliza los BigInt que DuckDB-WASM devuelve para columnas enteras (ej. "rank")
-// a Number de JS, para que .sort(), comparaciones y aritmetica funcionen sin errores
-// en toda la aplicacion, sin tener que acordarse de hacerlo en cada modulo de UI.
+// Todas las filas devueltas ya vienen normalizadas (sin BigInt).
 export async function consultarSQL(sql) {
   const db = await obtenerDB_();
   const conn = await db.connect();
@@ -59,31 +67,21 @@ export async function consultarSQL(sql) {
   }
 }
 
-// Recorre las columnas de una fila y convierte cualquier BigInt a Number.
-// Si el valor es un BigInt muy grande (> Number.MAX_SAFE_INTEGER), lo pasa
-// a Number igual (con perdida de precision teorica), porque para IDs de
-// ranking/conteos de esta app nunca se acerca a ese limite.
-function normalizarBigInts_(fila) {
-  const normalizada = {};
-  for (const clave in fila) {
-    const valor = fila[clave];
-    normalizada[clave] = typeof valor === 'bigint' ? Number(valor) : valor;
-  }
-  return normalizada;
+// Lee un parquet remoto directamente por URL, sin registerFileURL ni alias
+export async function cargarParquetCompleto(nombreArchivo) {
+  const url = BASE_URL + nombreArchivo;
+  console.log('Consultando parquet directo por URL:', url);
+  return consultarSQL(`SELECT * FROM read_parquet('${url}')`);
 }
 
-
 // ============================================================
-// NUEVO: UNIVERSO COMPLETO DE TICKERS (modelo dimension + hechos)
+// UNIVERSO COMPLETO DE TICKERS (modelo dimension + hechos)
 // ============================================================
 // Tickers.csv actua como DIMENSION (lista maestra de tickers).
 // Stock_Screener_PRO.csv y Stock_Advanced_Metrics.parquet actuan
 // como tablas de HECHOS, unidas por ticker via LEFT JOIN.
 // Con LEFT JOIN desde la dimension, ningun ticker desaparece aunque
-// le falten datos en alguna de las dos tablas de hechos -- en ese
-// caso simplemente trae NULL en esas columnas, en vez de ocultarlo.
-
-
+// le falten datos en alguna de las dos tablas de hechos.
 export async function cargarUniversoCompleto() {
   const urlTickers   = BASE_URL + 'Tickers.csv';
   const urlScreener  = BASE_URL + 'Stock_Screener_PRO.csv';
@@ -133,15 +131,5 @@ export async function cargarUniversoCompleto() {
   return consultarSQL(sql);
 }
 
-
-
-// ===== CARGA INICIAL: universo completo (screener + avanzados) + los dos parquet de series =====
-export async function cargarTodosLosDatos() {
-  const [screener, precios, fundamentales] = await Promise.all([
-    cargarUniversoCompleto(),
-    cargarParquetCompleto('Actual_Stock.parquet'),
-    cargarParquetCompleto('stock_fundamentals_history.parquet')
-  ]);
-
-  return { screener, precios, fundamentales };
-}
+// ===== CSV LOADER manual (sin uso activo hoy: cargarTodosLosDatos ya no lo llama,
+// se mantiene por si lo necesitas en otro lugar. Se puede borr
