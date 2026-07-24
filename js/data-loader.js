@@ -41,25 +41,37 @@ async function asegurarHttpfs_(conn) {
   console.log('httpfs listo');
 }
 
-// Ejecuta cualquier SQL, asegurando que httpfs este disponible antes de correr la query
+
+// Ejecuta cualquier SQL, asegurando que httpfs este disponible antes de correr la query.
+// Normaliza los BigInt que DuckDB-WASM devuelve para columnas enteras (ej. "rank")
+// a Number de JS, para que .sort(), comparaciones y aritmetica funcionen sin errores
+// en toda la aplicacion, sin tener que acordarse de hacerlo en cada modulo de UI.
 export async function consultarSQL(sql) {
   const db = await obtenerDB_();
   const conn = await db.connect();
   try {
     await asegurarHttpfs_(conn);
     const resultado = await conn.query(sql);
-    return resultado.toArray().map(row => row.toJSON());
+    const filas = resultado.toArray().map(row => row.toJSON());
+    return filas.map(normalizarBigInts_);
   } finally {
     await conn.close();
   }
 }
 
-// Lee un parquet remoto directamente por URL, sin registerFileURL ni alias
-export async function cargarParquetCompleto(nombreArchivo) {
-  const url = BASE_URL + nombreArchivo;
-  console.log('Consultando parquet directo por URL:', url);
-  return consultarSQL(`SELECT * FROM read_parquet('${url}')`);
+// Recorre las columnas de una fila y convierte cualquier BigInt a Number.
+// Si el valor es un BigInt muy grande (> Number.MAX_SAFE_INTEGER), lo pasa
+// a Number igual (con perdida de precision teorica), porque para IDs de
+// ranking/conteos de esta app nunca se acerca a ese limite.
+function normalizarBigInts_(fila) {
+  const normalizada = {};
+  for (const clave in fila) {
+    const valor = fila[clave];
+    normalizada[clave] = typeof valor === 'bigint' ? Number(valor) : valor;
+  }
+  return normalizada;
 }
+
 
 // ============================================================
 // NUEVO: UNIVERSO COMPLETO DE TICKERS (modelo dimension + hechos)
