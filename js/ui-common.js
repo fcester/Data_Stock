@@ -41,6 +41,7 @@ export function anchoBarraScore(score) {
 
 
 
+
 export function filaTicker(row, totalTickers = null) {
   const score  = row.score_FINAL_adj !== null && row.score_FINAL_adj !== undefined ? row.score_FINAL_adj : 0;
   const precio = row.lastPrice !== null && row.lastPrice !== undefined ? '$' + Number(row.lastPrice).toFixed(2) : 'N/D';
@@ -51,28 +52,26 @@ export function filaTicker(row, totalTickers = null) {
   const industry  = escapeHtml(row.industry);
   const rating    = escapeHtml(row.rating);
 
-  const textoRank = totalTickers
-    ? `#${row.rank ?? '-'} <span class="rank-total">/ ${totalTickers}</span>`
-    : `#${row.rank ?? '-'}`;
-
-  // Badge de vuelta en su posicion original: al final de la fila, como estaba antes.
   return `
     <div class="ranking-row" data-ticker="${ticker}">
-      <div class="rank-number">${textoRank}</div>
+      <div class="rank-number">#${row.rank ?? '-'}</div>
       <div class="ticker-cell">
         <div class="ticker-symbol">${ticker}</div>
         <div class="ticker-name">${shortName}</div>
         <div class="ticker-meta">${sector} · ${industry}</div>
       </div>
       <div class="precio-mini">${precio}</div>
-      <div class="score-mobile-row">
-        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${anchoBarraScore(score)}%"></div></div>
-        <div class="score-valor">${score.toFixed(2)}</div>
+      <div class="score-col">
+        <div class="score-mobile-row">
+          <div class="score-bar-bg"><div class="score-bar-fill" style="width:${anchoBarraScore(score)}%"></div></div>
+          <div class="score-valor">${score.toFixed(2)} <span class="score-sobre">/10</span></div>
+        </div>
+        <div class="badge ${claseBadge(row.rating)}">${rating}</div>
       </div>
-      <div class="badge ${claseBadge(row.rating)}">${rating}</div>
     </div>
   `;
 }
+
 
 export function interpretarScoreMercado(score) {
   if (score === null || score === undefined || Number.isNaN(score)) {
