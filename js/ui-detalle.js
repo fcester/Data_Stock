@@ -1,0 +1,334 @@
+
+import { claseBadge, flechaRendimiento, escapeHtml } from './ui-common.js';
+
+let cacheScreenerCompleto = [];
+let cachePrecios = [];
+let chartPrecioActual = null;
+
+const EXPLICACION_CATEGORIAS = {
+  valuation: 'Compara PE, PB y EV/EBITDA contra el sector. Menor valuación relativa = mejor score.',
+  profitability: 'Mide ROE, margen neto y margen operativo frente a pares del sector.',
+  growth: 'Evalúa crecimiento de ingresos y de ganancias interanual.',
+  financial: 'Mide solidez financiera: deuda/patrimonio y liquidez corriente.',
+  momentum: 'Compara el precio actual contra sus promedios móviles de 50/200 días y su posición en el rango de 52 semanas.',
+  fundamental_momentum: 'Analiza tendencia, consistencia (R²), CAGR y aceleración de ingresos, EBITDA, márgenes, deuda y FCF de los últimos 8 trimestres.',
+  income: 'Evalúa el dividendo entregado frente al sector, más el historial de crecimiento de dividendos.'
+};
+
+// ===== UTILIDADES DE PRECIO (portadas de Apps Script, adaptadas a datos ya en memoria) =====
+function calcularRetornosDiarios_(precios) {
+  const retornos = [];
+  for (let i = 1; i < precios.length; i++) {
+    const anterior = precios[i - 1];
+    const actual = precios[i];
+    if (anterior && actual && anterior !== 0) {
+      retornos.push((actual - anterior) / anterior);
+    }
+  }
+  return retornos;
+}
+
+function desviacionEstandar_(arr) {
+  if (arr.length < 2) return null;
+  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const varianza = arr.reduce((sum, x) => sum + Math.pow(x - m, 2), 0) / (arr.length - 1);
+  return Math.sqrt(varianza);
+}
+
+function calcularKpisPrecio_(serieCompleta, ventanaDias) {
+  const serie = serieCompleta.slice(-ventanaDias);
+  const valores = serie.map(p => p.value);
+
+  if (valores.length < 2) {
+    return { rendimiento_1m: null, rendimiento_3m: null, rendimiento_ytd: null, volatilidad_anualizada: null, max_drawdown: null };
+  }
+
+  const actual = valores[valores.length - 1];
+  const hace1m = valores[Math.max(0, valores.length - 1 - 21)];
+  const hace3m = valores[Math.max(0, valores.length - 1 - 63)];
+
+  const anioActual = new Date(serie[serie.length - 1].date).getFullYear();
+  const primerDelAnio = serie.find(p => new Date(p.date).getFullYear() === anioActual);
+  const valorYtd = primerDelAnio ? primerDelAnio.value : valores[0];
+
+  const retornos = calcularRetornosDiarios_(valores);
+  const sd = desviacionEstandar_(retornos);
+  const volatilidadAnualizada = sd !== null ? sd * Math.sqrt(252) * 100 : null;
+
+  let pico = valores[0];
+  let maxDD = 0;
+  valores.forEach(v => {
+    if (v > pico) pico = v;
+    const dd = (v - pico) / pico;
+    if (dd < maxDD) maxDD = dd;
+  });
+
+  return {
+    rendimiento_1m: hace1m ? ((actual - hace1m) / hace1m) * 100 : null,
+    rendimiento_3m: hace3m ? ((actual - hace3m) / hace3m) * 100 : null,
+    rendimiento_ytd: valorYtd ? ((actual - valorYtd) / valorYtd) * 100 : null,
+    volatilidad_anualizada: volatilidadAnualizada,
+    max_drawdown: maxDD * 100
+  };
+}
+
+function obtenerSerieTicker_(precios, ticker) {
+  return precios
+    .filter(p => (p.Ticker || '').toUpperCase() === ticker.toUpperCase())
+    .sort((a, b) => new Date(a.Date) - new Date(b.Date))
+    .map(p => ({ date: p.Date, value: p.Value }));
+}
+
+// ===== RENDER DEL PANEL =====
+function claseFlechaSimple_(valor) {
+  if (valor === null || valor === undefined) return 'N/D';
+  if (valor > 0) return `<span class="flecha-up">↑ +${valor.toFixed(2)}%</span>`;
+  if (valor < 0) return `<span class="flecha-down">↓ ${valor.toFixed(2)}%</span>`;
+  return '<span class="flecha-flat">→ 0%</span>';
+}
+
+function renderKpiAvanzado_(label, valor, sufijo = '', tooltip = null) {
+  const valorTexto = (valor === null || valor === undefined || Number.isNaN(valor)) ? 'N/D' : `${valor.toFixed(2)}${sufijo}`;
+  const labelHtml = tooltip
+    ? `<span class="tooltip-info">${label}<span class="tooltip-texto">${tooltip}</span></span>`
+    : label;
+  return `
+    <div class="kpi-card">
+      <div class="kpi-valor">${valorTexto}</div>
+      <div class="kpi-label">${labelHtml}</div>
+    </div>
+  `;
+}
+
+function pintarDetalle_(ticker) {
+  const info = cacheScreenerCompleto.find(r => (r.ticker || '').toUpperCase() === ticker.toUpperCase());
+  const contenido = document.getElementById('panel-detalle-contenido');
+
+  if (!info) {
+    contenido.innerHTML = '<p>Ticker no encontrado en el universo cargado.</p>';
+    return;
+  }
+
+  const serieTicker = obtenerSerieTicker_(cachePrecios, ticker);
+  const kpisPrecio = calcularKpisPrecio_(serieTicker, serieTicker.length);
+  const score = info.score_FINAL_adj !== null && info.score_FINAL_adj !== undefined ? info.score_FINAL_adj : 0;
+
+  const tooltipRankingGeneral = `
+    Score final ponderado: Valuation 16% + Profitability 16% + Growth 12% + Financial Health 12%
+    + Price Momentum 14% + Fundamental Momentum 24% + Income 6%.
+    Cada categoría se calcula por percentil dentro del mismo sector (comparación justa),
+    con penalización si faltan datos (completitud: ${info.data_completeness ?? 'N/D'}%) o si es microcap.
+  `;
+
+  const categorias = [
+    ['valuation', 'Valuation', info.score_valuation],
+    ['profitability', 'Profitability', info.score_profitability],
+    ['growth', 'Growth', info.score_growth],
+    ['financial', 'Financial Health', info.score_financial],
+    ['momentum', 'Price Momentum', info.score_momentum],
+    ['fundamental_momentum', 'Fundamental Momentum', info.score_fundamental_momentum],
+    ['income', 'Income', info.score_income]
+  ];
+
+  const similares = cacheScreenerCompleto
+    .filter(r => r.ticker !== info.ticker && r.sector === info.sector && r.industry === info.industry && r.score_FINAL_adj !== null)
+    .sort((a, b) => (b.score_FINAL_adj || 0) - (a.score_FINAL_adj || 0))
+    .slice(0, 6);
+
+  const htmlSimilares = similares.map(s => `
+    <div class="similar-card" data-ticker="${escapeHtml(s.ticker)}">
+      <strong>${escapeHtml(s.ticker)}</strong>
+      <div>${(s.score_FINAL_adj || 0).toFixed(2)}</div>
+      <div class="badge ${claseBadge(s.rating)}">${escapeHtml(s.rating)}</div>
+    </div>
+  `).join('') || '<p>No hay tickers similares disponibles.</p>';
+
+  // Recomendacion de analistas (dato informativo, sin scorear, tal como definio el equipo)
+  const recomendacion = info.recommendationKey
+    ? `${escapeHtml(info.recommendationKey)} (${info.numberOfAnalystOpinions ?? 0} analistas)`
+    : 'Sin cobertura de analistas';
+
+  const upsideHtml = info.analyst_upside !== null && info.analyst_upside !== undefined
+    ? claseFlechaSimple_(info.analyst_upside * 100)
+    : 'N/D';
+
+  contenido.innerHTML = `
+    <div class="detalle-header" style="flex-direction:column;align-items:flex-start;gap:12px">
+      <div>
+        <h2>${escapeHtml(info.ticker)} — ${escapeHtml(info.shortName)}</h2>
+        <p>${escapeHtml(info.sector)} · ${escapeHtml(info.industry)}</p>
+      </div>
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+        <div>
+          <div class="precio-actual">$${info.lastPrice !== null && info.lastPrice !== undefined ? Number(info.lastPrice).toFixed(2) : 'N/D'}</div>
+          <div class="precio-label">Precio actual</div>
+        </div>
+        <div style="text-align:center">
+          <div class="score-gauge">${score.toFixed(2)}<span style="font-size:1rem">/10</span></div>
+          <div class="badge ${claseBadge(info.rating)}">${escapeHtml(info.rating)}</div>
+        </div>
+      </div>
+      <div class="tooltip-info">
+        ℹ ¿Cómo se calcula este score?
+        <span class="tooltip-texto">${tooltipRankingGeneral}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Rendimiento reciente</h4>
+      <p>Último mes: ${claseFlechaSimple_(kpisPrecio.rendimiento_1m)}</p>
+      <p>Últimos 3 meses: ${claseFlechaSimple_(kpisPrecio.rendimiento_3m)}</p>
+      <p>En lo que va del año (YTD): ${claseFlechaSimple_(kpisPrecio.rendimiento_ytd)}</p>
+      <p>Volatilidad anualizada: ${kpisPrecio.volatilidad_anualizada !== null ? kpisPrecio.volatilidad_anualizada.toFixed(1) + '%' : 'N/D'}</p>
+      <p>Máxima caída registrada: <span style="color:var(--rojo)">${kpisPrecio.max_drawdown !== null ? kpisPrecio.max_drawdown.toFixed(1) + '%' : 'N/D'}</span></p>
+    </div>
+
+    <div class="card">
+      <h4>Precio histórico (último año)</h4>
+      <canvas id="grafico-precio-detalle" height="220"></canvas>
+    </div>
+
+    <div class="card">
+      <h4>Indicadores de riesgo y mercado</h4>
+      <div class="kpis-grid">
+        ${renderKpiAvanzado_('Sharpe Ratio', info.sharpe_ratio, '', 'Retorno anualizado ajustado por volatilidad total. Mayor es mejor.')}
+        ${renderKpiAvanzado_('Sortino Ratio', info.sortino_ratio, '', 'Similar al Sharpe, pero solo penaliza la volatilidad negativa (caídas).')}
+        ${renderKpiAvanzado_('VaR diario 95%', info.var_95_diario !== null && info.var_95_diario !== undefined ? info.var_95_diario * 100 : null, '%', 'En el 95% de los días históricos, la pérdida no superó este valor.')}
+        ${renderKpiAvanzado_('Beta', info.beta, '', 'Sensibilidad del precio frente al mercado. 1 = se mueve igual que el mercado.')}
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Salud financiera y consenso de mercado</h4>
+      <div class="kpis-grid">
+        ${renderKpiAvanzado_('Piotroski adaptado', info.piotroski_score_adj, '/6', `Salud financiera basada en ${info.piotroski_tests_total ?? 0} de 6 factores posibles (versión adaptada, no el F-Score académico de 9 puntos completo).`)}
+      </div>
+      <p style="margin-top:10px">Consenso de analistas: <strong>${recomendacion}</strong></p>
+      <p>Upside implícito vs. precio objetivo promedio: ${upsideHtml}</p>
+      <p>Insiders: ${info.heldPercentInsiders !== null && info.heldPercentInsiders !== undefined ? (info.heldPercentInsiders * 100).toFixed(1) + '%' : 'N/D'}
+         · Institucional: ${info.heldPercentInstitutions !== null && info.heldPercentInstitutions !== undefined ? (info.heldPercentInstitutions * 100).toFixed(1) + '%' : 'N/D'}
+         <span class="tooltip-info">ℹ<span class="tooltip-texto">Porcentaje de la empresa en manos de directivos/insiders y de inversores institucionales. Dato informativo, no forma parte del score.</span></span>
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Dividendos</h4>
+      <p>Dividend Yield: ${info.dividendYield !== null && info.dividendYield !== undefined ? (info.dividendYield * 100).toFixed(2) + '%' : 'N/D'}</p>
+      <p>Años consecutivos de aumento: ${info.dividend_growth_streak ?? 0}</p>
+      <p>Crecimiento promedio interanual: ${info.dividend_growth_avg !== null && info.dividend_growth_avg !== undefined ? (info.dividend_growth_avg * 100).toFixed(1) + '%' : 'N/D'}</p>
+    </div>
+
+    <div class="card">
+      <h4>Desglose del score por categoría</h4>
+      ${categorias.map(([key, label, valor]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span class="tooltip-info">${label}
+            <span class="tooltip-texto">${EXPLICACION_CATEGORIAS[key]}</span>
+          </span>
+          <div style="display:flex;align-items:center;gap:8px;width:55%">
+            <div class="score-bar-bg" style="flex:1"><div class="score-bar-fill" style="width:${Math.max(0, Math.min(100, (valor || 0) * 10))}%"></div></div>
+            <span style="font-size:0.85rem;font-weight:600">${(valor || 0).toFixed(1)}</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <h4>Tickers similares (mismo sector e industria)</h4>
+      <div class="similares-grid">${htmlSimilares}</div>
+    </div>
+  `;
+
+  // Listeners para navegar entre tickers similares sin cerrar el panel
+  contenido.querySelectorAll('.similar-card').forEach(card => {
+    card.addEventListener('click', () => {
+      abrirDetalle(card.dataset.ticker);
+    });
+  });
+
+  pintarGraficoPrecio_(serieTicker);
+}
+
+function pintarGraficoPrecio_(serieTicker) {
+  const canvas = document.getElementById('grafico-precio-detalle');
+  if (!canvas) return;
+
+  if (chartPrecioActual) {
+    chartPrecioActual.destroy();
+    chartPrecioActual = null;
+  }
+
+  if (serieTicker.length === 0) return;
+
+  // Ultimo anio (~252 dias habiles), interactivo con tooltip nativo de Chart.js
+  const serieUltimoAnio = serieTicker.slice(-252);
+
+  chartPrecioActual = new Chart(canvas, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'Precio',
+        data: serieUltimoAnio.map(p => ({ x: p.date, y: p.value })),
+        borderColor: '#4A74F3',
+        backgroundColor: 'rgba(74,116,243,0.1)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `$${Number(ctx.parsed.y).toFixed(2)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'month', tooltipFormat: 'dd MMM yyyy', displayFormats: { month: 'MMM yyyy' } },
+          ticks: { maxTicksLimit: 6 },
+          grid: { display: false }
+        },
+        y: {
+          beginAtZero: false,
+          ticks: { callback: v => '$' + v }
+        }
+      }
+    }
+  });
+}
+
+// ===== API PÚBLICA =====
+export function abrirDetalle(ticker) {
+  document.getElementById('overlay-detalle').classList.remove('oculto');
+  document.getElementById('panel-detalle').classList.remove('oculto');
+  pintarDetalle_(ticker);
+}
+
+function cerrarPanelDetalle() {
+  document.getElementById('overlay-detalle').classList.add('oculto');
+  document.getElementById('panel-detalle').classList.add('oculto');
+  if (chartPrecioActual) {
+    chartPrecioActual.destroy();
+    chartPrecioActual = null;
+  }
+}
+
+export function inicializarDetalle({ screener, precios }) {
+  cacheScreenerCompleto = screener;
+  cachePrecios = precios;
+
+  document.getElementById('btn-cerrar-panel').addEventListener('click', cerrarPanelDetalle);
+  document.getElementById('overlay-detalle').addEventListener('click', cerrarPanelDetalle);
+
+  document.addEventListener('abrir-detalle-ticker', (e) => {
+    abrirDetalle(e.detail.ticker);
+  });
+}
