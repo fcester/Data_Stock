@@ -72,9 +72,84 @@
     <div id="tabla-completa-container"></div>
   </main>
 
-  <main id="vista-cartera" class="vista oculto">
-    <p>(Próximo paso: Cartera)</p>
-  </main>
+  
+<div id="vista-cartera" class="vista oculto">
+  <div class="section-header">
+    <button class="btn-secondary" id="btn-volver-home-cartera">← Volver</button>
+    <h2>Construir cartera de inversión</h2>
+  </div>
+
+  <div class="disclaimer-box">
+    ⚠ Herramienta educativa y analítica. Los cálculos se basan en datos históricos y modelos estadísticos simplificados.
+    No constituyen una recomendación de inversión ni garantizan rendimientos futuros.
+    Para decisiones reales de inversión, consultá siempre con un asesor financiero profesional.
+  </div>
+
+  <div class="card">
+    <h3>💡 Sugerir cartera automáticamente</h3>
+    <p style="color:var(--texto-secundario);font-size:0.85rem;margin-bottom:10px">
+      Elegí en base a qué KPIs querés priorizar los activos. El sistema arma una cartera diversificada por sector.
+    </p>
+    <div id="kpis-sugeridor" class="selects-fila"></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <label>Cantidad de activos: <input type="number" id="sugeridor-n-activos" min="2" max="15" value="10" style="width:70px"></label>
+      <button class="btn-secondary" id="btn-sugerir-cartera">Sugerir cartera</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>1. Seleccioná tus activos (máximo 15)</h3>
+    <input type="text" id="buscador-tabla-cartera" placeholder="Buscar por ticker, empresa, sector o industria...">
+    <div class="contador-seleccion">Seleccionados: <span id="contador-seleccionados">0</span> / 15</div>
+    <div class="tabla-cartera-scroll">
+      <table class="tabla-activos-cartera" id="tabla-seleccion-cartera">
+        <thead>
+          <tr>
+            <th></th>
+            <th data-col="ticker" class="th-ordenable">Ticker <span id="flecha-orden-ticker"></span></th>
+            <th data-col="shortName" class="th-ordenable">Empresa <span id="flecha-orden-shortName"></span></th>
+            <th data-col="sector" class="th-ordenable">Sector <span id="flecha-orden-sector"></span></th>
+            <th data-col="industry" class="th-ordenable">Industria <span id="flecha-orden-industry"></span></th>
+            <th data-col="rating" class="th-ordenable">Rating <span id="flecha-orden-rating"></span></th>
+            <th data-col="score_FINAL_adj" class="th-ordenable">Score <span id="flecha-orden-score_FINAL_adj"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tabla-seleccion-cartera-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>2. Monto total a invertir</h3>
+    <input type="number" id="monto-total" placeholder="Ej: 10000" min="0">
+  </div>
+
+  <div class="card">
+    <h3>3. Método de ponderación</h3>
+    <div class="metodos-grid">
+      <div class="metodo-card" id="metodo-diversificacion" data-metodo="diversificacion">
+        <div class="metodo-icono">⚖</div>
+        <div class="metodo-nombre">Diversificación</div>
+        <div class="metodo-desc">Mismo peso para cada activo, sin importar sector</div>
+      </div>
+      <div class="metodo-card" id="metodo-equilibrado" data-metodo="equilibrado">
+        <div class="metodo-icono">🧭</div>
+        <div class="metodo-nombre">Equilibrado</div>
+        <div class="metodo-desc">Reparte por sector e industria antes que por activo. No reduce necesariamente el riesgo, solo la concentración temática.</div>
+      </div>
+      <div class="metodo-card" id="metodo-customizable" data-metodo="customizable">
+        <div class="metodo-icono">🎛</div>
+        <div class="metodo-nombre">Customizable</div>
+        <div class="metodo-desc">Vos asignás el % de cada activo manualmente</div>
+      </div>
+    </div>
+    <div id="tabla-pesos-manuales" class="oculto"></div>
+  </div>
+
+  <button class="btn-primary" id="btn-calcular-cartera">Calcular cartera</button>
+  <div id="resultado-cartera"></div>
+</div>
+
 
  
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
