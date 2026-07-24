@@ -1,5 +1,5 @@
 
-import { filaTicker, renderKpisGlobales } from './ui-common.js';
+import { filaTicker, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
 
 let cacheScreenerCompleto = [];
 let arbolSectoresCache = {};
@@ -63,7 +63,6 @@ function aplicarFiltros_() {
 
   resultado.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
 
-  // KPIs recalculados en base a lo filtrado (o el universo completo si no hay filtro)
   const contKpis = document.getElementById('kpis-screener-completo');
   if (contKpis) contKpis.innerHTML = renderKpisGlobales(resultado);
 
@@ -88,9 +87,15 @@ function pintarTablaCompleta_(data) {
   });
 }
 
-export function inicializarScreener({ screener }) {
-  cacheScreenerCompleto = screener;
-  arbolSectoresCache = construirArbolSectorIndustria_(screener);
+export function inicializarScreener({ screener, precios }) {
+  const preciosPorTicker = agruparPreciosPorTicker(precios);
+  cacheScreenerCompleto = screener.map(row => {
+    const tienePrecio = row.lastPrice !== null && row.lastPrice !== undefined;
+    const precioFinal = tienePrecio ? row.lastPrice : obtenerUltimoPrecio(preciosPorTicker, row.ticker);
+    return { ...row, lastPrice: precioFinal };
+  });
+
+  arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
   poblarSelectsFiltro_();
 
   document.getElementById('filtro-sector-select').addEventListener('change', (e) => {
