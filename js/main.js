@@ -3,6 +3,7 @@ import { cargarTodosLosDatos } from './data-loader.js';
 import { inicializarHome } from './ui-home.js';
 import { inicializarScreener, mostrarVistaCompleta } from './ui-screener.js';
 import { inicializarDetalle } from './ui-detalle.js';
+import { inicializarCartera } from './ui-cartera.js';
 
 let datosGlobales = null;
 
@@ -19,6 +20,7 @@ async function iniciar() {
     inicializarHome(datos);
     inicializarScreener(datos);
     inicializarDetalle(datos);
+    inicializarCartera(datos);
 
     document.getElementById('btn-ver-todo').addEventListener('click', () => {
       mostrarVista('vista-completa');
