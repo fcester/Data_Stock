@@ -2,6 +2,7 @@
 import { cargarTodosLosDatos } from './data-loader.js';
 import { inicializarHome } from './ui-home.js';
 import { inicializarScreener, mostrarVistaCompleta } from './ui-screener.js';
+import { inicializarDetalle } from './ui-detalle.js';
 
 let datosGlobales = null;
 
@@ -17,6 +18,7 @@ async function iniciar() {
 
     inicializarHome(datos);
     inicializarScreener(datos);
+    inicializarDetalle(datos);
 
     document.getElementById('btn-ver-todo').addEventListener('click', () => {
       mostrarVista('vista-completa');
@@ -28,7 +30,7 @@ async function iniciar() {
     });
 
     document.getElementById('btn-ir-cartera').addEventListener('click', () => {
-      alert('Cartera: próximo paso a construir.');
+      mostrarVista('vista-cartera');
     });
 
   } catch (err) {
