@@ -1,39 +1,9 @@
 
+import { filaTicker } from './ui-common.js';
+
 let cacheScreenerCompleto = [];
 let arbolSectoresCache = {};
 let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '' };
-
-function claseBadge(rating) {
-  const mapa = {
-    'Excelente': 'badge-excelente',
-    'Buena': 'badge-buena',
-    'Neutral': 'badge-neutral',
-    'Débil': 'badge-debil',
-    'Evitar': 'badge-evitar'
-  };
-  return mapa[rating] || 'badge-neutral';
-}
-
-function filaTicker(row) {
-  const score = row.score_FINAL_adj !== null && row.score_FINAL_adj !== undefined ? row.score_FINAL_adj : 0;
-  const precio = row.lastPrice !== null && row.lastPrice !== undefined ? '$' + Number(row.lastPrice).toFixed(2) : 'N/D';
-  return `
-    <div class="ranking-row" data-ticker="${row.ticker}">
-      <div class="rank-number">#${row.rank}</div>
-      <div class="ticker-cell">
-        <div class="ticker-symbol">${row.ticker}</div>
-        <div class="ticker-name">${row.shortName}</div>
-        <div class="ticker-meta">${row.sector} · ${row.industry}</div>
-      </div>
-      <div class="precio-mini">${precio}</div>
-      <div class="score-mobile-row">
-        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${score * 10}%"></div></div>
-        <div class="score-valor">${score.toFixed(2)}</div>
-      </div>
-      <div class="badge ${claseBadge(row.rating)}">${row.rating}</div>
-    </div>
-  `;
-}
 
 function construirArbolSectorIndustria_(screener) {
   const arbol = {};
@@ -54,6 +24,7 @@ function poblarSelectsFiltro_() {
   const selectSector = document.getElementById('filtro-sector-select');
   selectSector.innerHTML = '<option value="Todos">Todos los sectores</option>' +
     Object.keys(arbolSectoresCache).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+
   actualizarOpcionesIndustria_('Todos');
 }
 
@@ -113,7 +84,6 @@ function pintarTablaCompleta_(data) {
 export function inicializarScreener({ screener }) {
   cacheScreenerCompleto = screener;
   arbolSectoresCache = construirArbolSectorIndustria_(screener);
-
   poblarSelectsFiltro_();
 
   document.getElementById('filtro-sector-select').addEventListener('change', (e) => {
