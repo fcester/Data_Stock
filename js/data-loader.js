@@ -71,6 +71,7 @@ export async function cargarParquetCompleto(nombreArchivo) {
 // le falten datos en alguna de las dos tablas de hechos -- en ese
 // caso simplemente trae NULL en esas columnas, en vez de ocultarlo.
 
+
 export async function cargarUniversoCompleto() {
   const urlTickers   = BASE_URL + 'Tickers.csv';
   const urlScreener  = BASE_URL + 'Stock_Screener_PRO.csv';
@@ -79,11 +80,11 @@ export async function cargarUniversoCompleto() {
   const sql = `
     WITH tickers_norm AS (
       SELECT DISTINCT TRIM(CAST(ticker AS VARCHAR)) AS ticker
-      FROM read_csv_auto('${urlTickers}', trim_strings=True, all_varchar=False)
+      FROM read_csv_auto('${urlTickers}')
     ),
     screener_norm AS (
       SELECT * EXCLUDE (ticker), TRIM(CAST(ticker AS VARCHAR)) AS ticker
-      FROM read_csv_auto('${urlScreener}', trim_strings=True, all_varchar=False)
+      FROM read_csv_auto('${urlScreener}')
     ),
     avanzados_norm AS (
       SELECT * EXCLUDE (ticker), TRIM(CAST(ticker AS VARCHAR)) AS ticker
@@ -119,6 +120,7 @@ export async function cargarUniversoCompleto() {
 
   return consultarSQL(sql);
 }
+
 
 
 // ===== CARGA INICIAL: universo completo (screener + avanzados) + los dos parquet de series =====
