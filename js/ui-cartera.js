@@ -101,12 +101,18 @@ function construirArbolSectorIndustria_(lista) {
   return resultado;
 }
 
+
 function poblarSelectsFiltroCartera_() {
   const selectSector = document.getElementById('cartera-filtro-sector');
+  if (!selectSector) {
+    console.warn('⚠ #cartera-filtro-sector no encontrado en el DOM — verificar index.html');
+    return;
+  }
   selectSector.innerHTML = '<option value="Todos">Todos los sectores</option>' +
     Object.keys(arbolSectoresCache).sort().map(s => `<option value="${s}">${s}</option>`).join('');
   actualizarOpcionesIndustriaCartera_('Todos');
 }
+
 
 function actualizarOpcionesIndustriaCartera_(sectorSeleccionado) {
   const selectIndustry = document.getElementById('cartera-filtro-industry');
