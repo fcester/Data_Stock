@@ -812,6 +812,167 @@ for t in data.keys():   # solo tickers que ya tuvieron descarga exitosa en el pa
         fila["dividend_growth_avg"]    = np.nan
 
     filas_avanzadas.append(fila)
+    
+    # ══════════════════════════════════════════════════
+    # GRUPO A: VALORACIÓN PROFUNDA
+    # ══════════════════════════════════════════════════
+    
+    # A1: FCF Yield
+    market_cap = info.get("marketCap")
+    fcf        = info.get("freeCashflow")
+    fila["fcf_yield"] = (
+        fcf / market_cap
+        if (fcf and market_cap and market_cap > 0) else np.nan
+    )
+    
+    # A2: Price / FCF
+    shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+    precio_t   = last_price[t] if t in last_price.index else np.nan
+    if fcf and shares_out and shares_out > 0 and fcf > 0 and not np.isnan(precio_t):
+        fila["price_to_fcf"] = precio_t / (fcf / shares_out)
+    else:
+        fila["price_to_fcf"] = np.nan
+    
+    # A3: Graham Number + Margin of Safety
+    eps      = info.get("trailingEps")
+    book_val = info.get("bookValue")
+    if eps and book_val and eps > 0 and book_val > 0:
+        graham = np.sqrt(22.5 * eps * book_val)
+        fila["graham_number"]           = graham
+        fila["graham_margin_of_safety"] = (graham / precio_t - 1) if not np.isnan(precio_t) and precio_t > 0 else np.nan
+    else:
+        fila["graham_number"]           = np.nan
+        fila["graham_margin_of_safety"] = np.nan
+    
+    # A4: EV / Sales
+    ev      = info.get("enterpriseValue")
+    revenue = info.get("totalRevenue")
+    fila["ev_to_sales"] = ev / revenue if (ev and revenue and revenue > 0) else np.nan
+    
+    # A5: Earnings Quality (OCF / Net Income)
+    ocf = info.get("operatingCashflow")
+    ni  = info.get("netIncome")
+    fila["earnings_quality"] = ocf / ni if (ocf and ni and ni != 0) else np.nan
+    
+    # ══════════════════════════════════════════════════
+    # GRUPO B: RIESGO AMPLIADO (usa prices ya en memoria)
+    # ══════════════════════════════════════════════════
+    
+    if t in prices.columns:
+        serie_p = prices[t].dropna()
+    
+        # B1: Max Drawdown + Drawdown actual
+        rolling_max = serie_p.cummax()
+        drawdown    = (serie_p - rolling_max) / rolling_max
+        fila["max_drawdown"]      = drawdown.min()
+        fila["current_drawdown"]  = float(drawdown.iloc[-1])
+    
+        # B2: Calmar Ratio
+        n_years = len(serie_p) / 252
+        if n_years > 0 and serie_p.iloc[0] > 0 and abs(fila["max_drawdown"]) > 0:
+            cagr_p = (serie_p.iloc[-1] / serie_p.iloc[0]) ** (1 / n_years) - 1
+            fila["calmar_ratio"] = cagr_p / abs(fila["max_drawdown"])
+        else:
+            fila["calmar_ratio"] = np.nan
+    
+        # B3: Volatilidad anualizada
+        retornos_t = serie_p.pct_change().dropna()
+        fila["volatility_annual"] = retornos_t.std() * np.sqrt(252)
+    
+        # B4: RSI 14 días
+        delta     = serie_p.diff().dropna()
+        ganan     = delta.clip(lower=0)
+        pierden   = (-delta).clip(lower=0)
+        avg_g     = ganan.ewm(alpha=1/14, min_periods=14).mean()
+        avg_p     = pierden.ewm(alpha=1/14, min_periods=14).mean()
+        rs        = avg_g / avg_p.replace(0, np.nan)
+        rsi_serie = 100 - (100 / (1 + rs))
+        fila["rsi_14"] = float(rsi_serie.iloc[-1]) if len(rsi_serie) > 0 else np.nan
+    
+        # B5: Momentum multi-período
+        fila["momentum_1m"] = (serie_p.iloc[-1] / serie_p.iloc[-21] - 1)  if len(serie_p) >= 21  else np.nan
+        fila["momentum_3m"] = (serie_p.iloc[-1] / serie_p.iloc[-63] - 1)  if len(serie_p) >= 63  else np.nan
+        fila["momentum_6m"] = (serie_p.iloc[-1] / serie_p.iloc[-126] - 1) if len(serie_p) >= 126 else np.nan
+    
+    else:
+        for campo in ["max_drawdown", "current_drawdown", "calmar_ratio",
+                      "volatility_annual", "rsi_14",
+                      "momentum_1m", "momentum_3m", "momentum_6m"]:
+            fila[campo] = np.nan
+    
+    # ══════════════════════════════════════════════════
+    # GRUPO C: SOLIDEZ FINANCIERA
+    # ══════════════════════════════════════════════════
+    
+    # C1: Net Debt / EBITDA
+    total_debt  = info.get("totalDebt") or 0
+    total_cash  = info.get("totalCash") or 0
+    ebitda_val  = info.get("ebitda")
+    net_debt    = total_debt - total_cash
+    fila["net_debt"]            = net_debt
+    fila["net_debt_to_ebitda"]  = (
+        net_debt / ebitda_val
+        if (ebitda_val and ebitda_val > 0) else np.nan
+    )
+    
+    # C2: ROIC
+    ebit_val   = info.get("ebit")
+    tax_rate   = info.get("effectiveTaxRate") or 0.21
+    curr_liab  = info.get("totalCurrentLiabilities") or 0
+    tot_assets = info.get("totalAssets")
+    if ebit_val and tot_assets and (tot_assets - curr_liab) > 0:
+        fila["roic"] = ebit_val * (1 - tax_rate) / (tot_assets - curr_liab)
+    else:
+        fila["roic"] = np.nan
+    
+    # C3: Asset Turnover
+    fila["asset_turnover"] = (
+        revenue / tot_assets
+        if (revenue and tot_assets and tot_assets > 0) else np.nan
+    )
+    
+    # C4: Interest Coverage
+    ebit_v     = info.get("ebit")
+    int_exp    = info.get("interestExpense")  # yfinance devuelve negativo
+    if ebit_v and int_exp and int_exp < 0:
+        fila["interest_coverage"] = ebit_v / abs(int_exp)
+    else:
+        fila["interest_coverage"] = np.nan
+    
+    # C5: Working Capital
+    curr_assets = info.get("totalCurrentAssets")
+    curr_liab_v = info.get("totalCurrentLiabilities")
+    fila["working_capital"] = (
+        curr_assets - curr_liab_v
+        if (curr_assets and curr_liab_v) else np.nan
+    )
+    
+    # ══════════════════════════════════════════════════
+    # GRUPO D: SENTIMIENTO Y ANALISTAS
+    # ══════════════════════════════════════════════════
+    
+    # D1: Analyst Conviction Score (consenso ponderado por cobertura)
+    rec_mean   = info.get("recommendationMean")  # 1=Strong Buy ... 5=Strong Sell
+    n_analysts = info.get("numberOfAnalystOpinions") or 0
+    if rec_mean and n_analysts > 0:
+        conviction_raw    = (5 - rec_mean) / 4          # 0-1, mayor = más alcista
+        coverage_weight   = min(n_analysts / 20, 1.0)   # satura en 20 analistas
+        fila["analyst_conviction"] = conviction_raw * coverage_weight
+    else:
+        fila["analyst_conviction"] = np.nan
+    
+    # D2: Short % Float
+    shares_short = info.get("sharesShort")
+    float_shares = info.get("floatShares") or info.get("sharesOutstanding")
+    fila["short_pct_float"] = (
+        shares_short / float_shares
+        if (shares_short and float_shares and float_shares > 0) else np.nan
+    )
+    
+    # D3: Beta ajustado Blume
+    raw_beta = info.get("beta")
+    fila["beta_adj"] = (0.67 * raw_beta + 0.33) if raw_beta is not None else np.nan
+
 
 df_avanzado = pd.DataFrame(filas_avanzadas)
 
