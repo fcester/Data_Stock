@@ -300,13 +300,42 @@ export async function cargarEvolucionTicker(ticker) {
   `);
 }
 
-// ── ACTUALIZAR cargarTodosLosDatos para incluir fechas del historial ────
-export async function cargarTodosLosDatos() {
-  const [screener, precios, fundamentales, fechasHistorial] = await Promise.all([
-    cargarUniversoCompleto(),
-    cargarParquetCompleto('Actual_Stock.parquet'),
-    cargarParquetCompleto('stock_fundamentals_history.parquet'),
-    cargarFechasHistorial()                          // ← NUEVO
-  ]);
-  return { screener, precios, fundamentales, fechasHistorial };  // ← NUEVO campo
+
+// ── NUEVO: tendencia de sectores (score promedio hace ~30 días) ──────────
+// Usa el snapshot más antiguo disponible como referencia de tendencia.
+// Si el historial tiene menos de 30 días, compara con lo que haya.
+export async function cargarTendenciaSectores() {
+  const url = BASE_URL + 'Stock_Screener_History.parquet';
+  try {
+    const filas = await consultarSQL(`
+      SELECT
+        TRIM(CAST(sector AS VARCHAR))    AS sector,
+        AVG(score_FINAL_adj)             AS avg_score_ref,
+        MIN(snapshot_date)               AS fecha_ref
+      FROM read_parquet('${url}')
+      WHERE snapshot_date = (
+        SELECT MIN(snapshot_date) FROM read_parquet('${url}')
+      )
+        AND sector IS NOT NULL
+      GROUP BY sector
+    `);
+    return filas;
+  } catch (e) {
+    console.warn('Sin tendencia de sectores disponible:', e.message);
+    return [];
+  }
 }
+
+// ── ACTUALIZADO: incluye tendencia de sectores ───────────────────────────
+export async function cargarTodosLosDatos() {
+  const [screener, precios, fundamentales, fechasHistorial, tendenciaSectores] =
+    await Promise.all([
+      cargarUniversoCompleto(),
+      cargarParquetCompleto('Actual_Stock.parquet'),
+      cargarParquetCompleto('stock_fundamentals_history.parquet'),
+      cargarFechasHistorial(),
+      cargarTendenciaSectores()           // ← NUEVO
+    ]);
+  return { screener, precios, fundamentales, fechasHistorial, tendenciaSectores };
+}
+
