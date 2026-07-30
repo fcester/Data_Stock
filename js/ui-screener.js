@@ -1,8 +1,8 @@
 
-
 import { filaTicker, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
 import { cargarSnapshotFecha } from './data-loader.js';
 
+// ── Variables de módulo (sin duplicados) ──────────────────────────────────
 let cacheScreenerCompleto  = [];
 let cacheScreenerHistorico = [];
 let arbolSectoresCache     = {};
@@ -10,20 +10,13 @@ let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busque
 let modoHistorico          = false;
 let fechaHistoricaActual   = null;
 let cacheFechasDisponibles = [];
-let screenerActualRef      = [];   // referencia fija a datos actuales para calcular delta
+let screenerActualRef      = [];   // referencia fija para calcular delta de rank
 
-
-// ── Estado del modo fecha ─────────────────────────────────────────────────
-let modoHistorico = false;           // false = datos actuales, true = snapshot histórico
-let fechaHistoricaActual = null;     // fecha seleccionada en el selector
-let cacheFechasDisponibles = [];     // lista de fechas del historial
-let screenerActualParaComparar = []; // referencia a datos actuales para el diff de rank
-
-
+// ── Árbol sector → industrias ─────────────────────────────────────────────
 function construirArbolSectorIndustria_(screener) {
   const arbol = {};
   screener.forEach(r => {
-    const sector = r.sector || 'Sin sector';
+    const sector    = r.sector   || 'Sin sector';
     const industria = r.industry || 'Sin industria';
     if (!arbol[sector]) arbol[sector] = new Set();
     arbol[sector].add(industria);
@@ -35,15 +28,20 @@ function construirArbolSectorIndustria_(screener) {
   return resultado;
 }
 
+// ── Selects de filtro ─────────────────────────────────────────────────────
 function poblarSelectsFiltro_() {
   const selectSector = document.getElementById('filtro-sector-select');
-  selectSector.innerHTML = '<option value="Todos">Todos los sectores</option>' +
-    Object.keys(arbolSectoresCache).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+  if (!selectSector) return;
+  selectSector.innerHTML =
+    '<option value="Todos">Todos los sectores</option>' +
+    Object.keys(arbolSectoresCache).sort()
+      .map(s => `<option value="${s}">${s}</option>`).join('');
   actualizarOpcionesIndustria_('Todos');
 }
 
 function actualizarOpcionesIndustria_(sectorSeleccionado) {
   const selectIndustry = document.getElementById('filtro-industry-select');
+  if (!selectIndustry) return;
   let industrias = [];
   if (sectorSeleccionado === 'Todos') {
     const todasSet = new Set();
@@ -52,94 +50,91 @@ function actualizarOpcionesIndustria_(sectorSeleccionado) {
   } else {
     industrias = (arbolSectoresCache[sectorSeleccionado] || []).slice().sort();
   }
-  selectIndustry.innerHTML = '<option value="Todas">Todas las industrias</option>' +
+  selectIndustry.innerHTML =
+    '<option value="Todas">Todas las industrias</option>' +
     industrias.map(i => `<option value="${i}">${i}</option>`).join('');
 }
 
-
+// ── Aplicar filtros y renderizar tabla ────────────────────────────────────
 function aplicarFiltros_(mostrarDelta = false) {
-  // Fuente de datos según modo
-  const fuente = modoHistorico ? cacheScreenerHistorico : cacheScreenerCompleto;
+  const fuente  = modoHistorico ? cacheScreenerHistorico : cacheScreenerCompleto;
   let resultado = [...fuente];
 
-  if (filtroActivo.sector !== 'Todos')    resultado = resultado.filter(r => r.sector === filtroActivo.sector);
-  if (filtroActivo.industry !== 'Todas') resultado = resultado.filter(r => r.industry === filtroActivo.industry);
-  if (filtroActivo.rating !== 'Todos')   resultado = resultado.filter(r => r.rating === filtroActivo.rating);
+  if (filtroActivo.sector   !== 'Todos')
+    resultado = resultado.filter(r => r.sector   === filtroActivo.sector);
+  if (filtroActivo.industry !== 'Todas')
+    resultado = resultado.filter(r => r.industry === filtroActivo.industry);
+  if (filtroActivo.rating   !== 'Todos')
+    resultado = resultado.filter(r => r.rating   === filtroActivo.rating);
   if (filtroActivo.busqueda) {
     const q = filtroActivo.busqueda.toUpperCase();
     resultado = resultado.filter(r =>
-      (r.ticker || '').toUpperCase().includes(q) ||
+      (r.ticker    || '').toUpperCase().includes(q) ||
       (r.shortName || '').toUpperCase().includes(q)
     );
   }
-
   resultado.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
 
-  // KPIs
   const contKpis = document.getElementById('kpis-screener-completo');
   if (contKpis) contKpis.innerHTML = renderKpisGlobales(resultado);
 
-  // Banner de modo histórico
-  const contTabla = document.getElementById('tabla-completa-container');
+  const cont = document.getElementById('tabla-completa-container');
+  if (!cont) return;
+
+  // Banner solo en modo histórico
   let bannerHtml = '';
   if (modoHistorico && fechaHistoricaActual) {
-    bannerHtml = `
-      <div class="banner-historico" id="banner-historico">
-        📅 Mostrando ranking del <strong>${formatearFecha_(fechaHistoricaActual)}</strong>
-        — Los scores y posiciones son los de esa fecha, no los actuales.
-      </div>
-    `;
+    bannerHtml = `<div class="banner-historico">
+      📅 Ranking del <strong>${formatearFecha_(fechaHistoricaActual)}</strong>
+      — scores y posiciones de esa fecha, no las actuales.
+    </div>`;
   }
 
-  contTabla.innerHTML = bannerHtml +
-    `<div class="ranking-list">
-      ${resultado.map(r => filaTickerConDelta_(r, mostrarDelta)).join('')}
-    </div>`;
-
-  contTabla.querySelectorAll('.ranking-row').forEach(row => {
-    row.addEventListener('click', () => {
-      document.dispatchEvent(new CustomEvent('abrir-detalle-ticker', { detail: { ticker: row.dataset.ticker } }));
-    });
-  });
-}
-
-function pintarTablaCompleta_(data) {
-  const cont = document.getElementById('tabla-completa-container');
-
-  if (data.length === 0) {
-    cont.innerHTML = '<p style="text-align:center;color:var(--texto-secundario);padding:24px">No hay tickers que coincidan con estos filtros.</p>';
+  if (resultado.length === 0) {
+    cont.innerHTML = bannerHtml +
+      `<p style="text-align:center;color:var(--texto-secundario);padding:24px">
+        No hay tickers que coincidan con estos filtros.
+       </p>`;
     return;
   }
 
-  cont.innerHTML = `<div class="ranking-list">${data.map(r => filaTicker(r)).join('')}</div>`;
+  cont.innerHTML = bannerHtml +
+    `<div class="ranking-list">
+      ${resultado.map(r => filaTickerConDelta_(r, mostrarDelta)).join('')}
+     </div>`;
 
   cont.querySelectorAll('.ranking-row').forEach(row => {
     row.addEventListener('click', () => {
-      const ticker = row.dataset.ticker;
-      document.dispatchEvent(new CustomEvent('abrir-detalle-ticker', { detail: { ticker } }));
+      document.dispatchEvent(new CustomEvent('abrir-detalle-ticker', {
+        detail: { ticker: row.dataset.ticker }
+      }));
     });
   });
 }
 
-
-
+// ── Inicialización principal ──────────────────────────────────────────────
 export function inicializarScreener({ screener, precios, fechasHistorial }) {
   const preciosPorTicker = agruparPreciosPorTicker(precios);
 
   cacheScreenerCompleto = screener.map(row => {
     const tienePrecio = row.lastPrice !== null && row.lastPrice !== undefined;
-    return { ...row, lastPrice: tienePrecio ? row.lastPrice : obtenerUltimoPrecio(preciosPorTicker, row.ticker) };
+    return {
+      ...row,
+      lastPrice: tienePrecio
+        ? row.lastPrice
+        : obtenerUltimoPrecio(preciosPorTicker, row.ticker)
+    };
   });
-  screenerActualRef      = cacheScreenerCompleto;
+  screenerActualRef      = cacheScreenerCompleto;   // referencia fija para delta
   cacheFechasDisponibles = fechasHistorial || [];
 
   arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
   poblarSelectsFiltro_();
   poblarSelectorFechas_(cacheFechasDisponibles);
 
-  // ── Listeners filtros existentes ────────────────────────────────────
+  // ── Listeners: filtros de texto y selects ────────────────────────────
   document.getElementById('filtro-sector-select')?.addEventListener('change', (e) => {
-    filtroActivo.sector = e.target.value;
+    filtroActivo.sector   = e.target.value;
     filtroActivo.industry = 'Todas';
     actualizarOpcionesIndustria_(e.target.value);
     aplicarFiltros_();
@@ -157,204 +152,58 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
     aplicarFiltros_();
   });
 
-  // ── Listeners modo histórico (solo si el HTML ya los tiene) ─────────
-  document.getElementById('btn-modo-actual')?.addEventListener('click', activarModoActual_);
-  document.getElementById('btn-modo-historico')?.addEventListener('click', () => {
-    const sel = document.getElementById('selector-fecha-historico');
-    if (sel) { sel.classList.remove('oculto'); sel.style.display = 'flex'; }
-    document.getElementById('btn-modo-historico')?.classList.add('activo');
-    document.getElementById('btn-modo-actual')?.classList.remove('activo');
-    if (cacheFechasDisponibles.length > 0) cargarFechaHistorica_(cacheFechasDisponibles[0]);
-  });
-  document.getElementById('select-fecha-historico')?.addEventListener('change', (e) => {
-    if (e.target.value) cargarFechaHistorica_(e.target.value);
-  });
-  document.getElementById('btn-comparar-actual')?.addEventListener('click', activarModoComparacion_);
-}
+  // ── Listeners: modo histórico (?.  = no crash si el HTML aún no está) ─
+  document.getElementById('btn-modo-actual')
+    ?.addEventListener('click', activarModoActual_);
 
-  
-  // ── Recibir filtro desde la página de Mercado ──────────────────────
+  document.getElementById('btn-modo-historico')
+    ?.addEventListener('click', () => {
+      const selectorDiv = document.getElementById('selector-fecha-historico');
+      if (selectorDiv) {
+        selectorDiv.classList.remove('oculto');
+        selectorDiv.style.display = 'flex';
+      }
+      document.getElementById('btn-modo-historico')?.classList.add('activo');
+      document.getElementById('btn-modo-actual')?.classList.remove('activo');
+      if (cacheFechasDisponibles.length > 0) {
+        cargarFechaHistorica_(cacheFechasDisponibles[0]);
+      }
+    });
+
+  document.getElementById('select-fecha-historico')
+    ?.addEventListener('change', (e) => {
+      if (e.target.value) cargarFechaHistorica_(e.target.value);
+    });
+
+  document.getElementById('btn-comparar-actual')
+    ?.addEventListener('click', activarModoComparacion_);
+
+  // ── Listener: recibir filtro desde la página Mercado ─────────────────
   document.addEventListener('filtrar-screener', (e) => {
     const { sector, industry } = e.detail;
     filtroActivo.sector   = sector   || 'Todos';
     filtroActivo.industry = industry || 'Todas';
     filtroActivo.rating   = 'Todos';
     filtroActivo.busqueda = '';
-    // Sincronizar selects visualmente
+
     const selSector = document.getElementById('filtro-sector-select');
     if (selSector) selSector.value = filtroActivo.sector;
     actualizarOpcionesIndustria_(filtroActivo.sector);
     const selInd = document.getElementById('filtro-industry-select');
     if (selInd) selInd.value = filtroActivo.industry;
-    // Aplicar
+
     aplicarFiltros_();
   });
-
-  // ── NUEVOS: Listeners modo fecha (solo si el HTML ya fue actualizado) ──
-  const btnModoActual     = document.getElementById('btn-modo-actual');
-  const btnModoHistorico  = document.getElementById('btn-modo-historico');
-  const selectFecha       = document.getElementById('select-fecha-historico');
-  const btnComparar       = document.getElementById('btn-comparar-actual');
-
-  if (btnModoActual) {
-    btnModoActual.addEventListener('click', () => activarModoActual_());
-  }
-
-  if (btnModoHistorico) {
-    btnModoHistorico.addEventListener('click', () => {
-      const selectorDiv = document.getElementById('selector-fecha-historico');
-      if (selectorDiv) {
-        selectorDiv.classList.remove('oculto');
-        selectorDiv.style.display = 'flex';
-      }
-      btnModoHistorico.classList.add('activo');
-      if (btnModoActual) btnModoActual.classList.remove('activo');
-      if (cacheFechasDisponibles.length > 0) {
-        cargarFechaHistorica_(cacheFechasDisponibles[0]);
-      }
-    });
-  }
-
-  if (selectFecha) {
-    selectFecha.addEventListener('change', (e) => {
-      if (e.target.value) cargarFechaHistorica_(e.target.value);
-    });
-  }
-
-  if (btnComparar) {
-    btnComparar.addEventListener('click', () => activarModoComparacion_());
-  }
-
-}
-
-// ── Poblar el select de fechas históricas ────────────────────────────────
-
-function poblarSelectorFechas_(fechas) {
-  const sel = document.getElementById('select-fecha-historico');
-  // El elemento solo existe si ya se actualizó index.html con el modo-fecha-bar
-  // Si no existe, salimos silenciosamente sin romper nada
-  if (!sel) {
-    console.warn('⚠ #select-fecha-historico no encontrado — el HTML del modo histórico aún no fue agregado');
-    return;
-  }
-  if (fechas.length === 0) {
-    sel.innerHTML = '<option>Sin historial disponible</option>';
-    return;
-  }
-  sel.innerHTML = fechas.map(f => `<option value="${f}">${formatearFecha_(f)}</option>`).join('');
-}
-
-
-function formatearFecha_(fechaStr) {
-  const d = new Date(fechaStr + 'T00:00:00');
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-// ── Cargar snapshot de una fecha histórica ───────────────────────────────
-async function cargarFechaHistorica_(fecha) {
-  modoHistorico = true;
-  fechaHistoricaActual = fecha;
-
-  const badge = document.getElementById('badge-modo-historico');
-  badge.textContent = `📅 ${formatearFecha_(fecha)}`;
-
-  // Skeleton mientras carga
-  document.getElementById('tabla-completa-container').innerHTML = `
-    <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
-    <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
-    <div class="skeleton skeleton-row" style="height:60px"></div>
-  `;
-
-  try {
-    const snapshot = await cargarSnapshotFecha(fecha);
-    cacheScreenerHistorico = snapshot;
-
-    // Actualizar árbol de sectores con los datos históricos
-    arbolSectoresCache = construirArbolSectorIndustria_(snapshot);
-    poblarSelectsFiltro_();
-
-    aplicarFiltros_();
-  } catch (err) {
-    document.getElementById('tabla-completa-container').innerHTML =
-      `<p style="color:var(--rojo);padding:20px">Error cargando snapshot: ${err.message}</p>`;
-  }
-}
-
-// ── Volver a datos actuales ──────────────────────────────────────────────
-function activarModoActual_() {
-  modoHistorico = false;
-  fechaHistoricaActual = null;
-
-  document.getElementById('btn-modo-actual').classList.add('activo');
-  document.getElementById('btn-modo-historico').classList.remove('activo');
-  document.getElementById('selector-fecha-historico').classList.add('oculto');
-
-  // Restaurar árbol con datos actuales
-  arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
-  poblarSelectsFiltro_();
-
-  // Limpiar banner si existía
-  const banner = document.getElementById('banner-historico');
-  if (banner) banner.remove();
-
-  aplicarFiltros_();
-}
-
-// ── Modo comparación: filas con delta de rank ────────────────────────────
-function activarModoComparacion_() {
-  if (!modoHistorico || !cacheScreenerHistorico.length) return;
-
-  // Mapa de rank actual por ticker
-  const rankActual = {};
-  screenerActualParaComparar.forEach(r => { rankActual[r.ticker] = r.rank; });
-
-  // Enriquecer datos históricos con delta vs hoy
-  const conDelta = cacheScreenerHistorico.map(r => ({
-    ...r,
-    rank_actual: rankActual[r.ticker] ?? null,
-    rank_delta:  rankActual[r.ticker] !== null ? r.rank - rankActual[r.ticker] : null,
-    // delta positivo = bajó de rank (era mejor antes), negativo = subió
-  }));
-
-  cacheScreenerHistorico = conDelta;
-  aplicarFiltros_(true); // true = mostrar columna delta
 }
 
 export function mostrarVistaCompleta() {
   aplicarFiltros_();
 }
 
-// Extiende filaTicker agregando el indicador de cambio de rank
-// cuando estamos en modo comparación histórica
-function filaTickerConDelta_(row, mostrarDelta) {
-  const base = filaTicker(row);
-  if (!mostrarDelta || row.rank_delta === null || row.rank_delta === undefined) {
-    return base;
-  }
-
-  const delta = row.rank_delta; // positivo = era mejor antes (bajó), negativo = mejoró
-  let deltaHtml = '';
-  if (delta < 0) {
-    // Mejoró: subió posiciones (ahora tiene rank menor = mejor)
-    deltaHtml = `<span class="rank-delta rank-delta-sube">↑ ${Math.abs(delta)} vs hoy</span>`;
-  } else if (delta > 0) {
-    // Empeoró: bajó posiciones
-    deltaHtml = `<span class="rank-delta rank-delta-baja">↓ ${delta} vs hoy</span>`;
-  } else {
-    deltaHtml = `<span class="rank-delta rank-delta-igual">= mismo rank</span>`;
-  }
-
-  // Insertar el delta al lado del rank number
-  return base.replace(
-    `<div class="rank-number">#${row.rank ?? '-'}</div>`,
-    `<div class="rank-number">#${row.rank ?? '-'} ${deltaHtml}</div>`
-  );
-}
-
-// ── Selector de fechas históricas ────────────────────────────────────────
+// ── Funciones del modo histórico ──────────────────────────────────────────
 function poblarSelectorFechas_(fechas) {
   const sel = document.getElementById('select-fecha-historico');
-  if (!sel) return;
+  if (!sel) return;   // el HTML del modo histórico quizás aún no fue agregado
   sel.innerHTML = fechas.length === 0
     ? '<option>Sin historial aún</option>'
     : fechas.map(f => `<option value="${f}">${formatearFecha_(f)}</option>`).join('');
@@ -363,10 +212,9 @@ function poblarSelectorFechas_(fechas) {
 function formatearFecha_(fechaStr) {
   if (!fechaStr) return fechaStr;
   const d = new Date(fechaStr + 'T00:00:00');
-  return d.toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' });
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// ── Cargar snapshot histórico ─────────────────────────────────────────────
 async function cargarFechaHistorica_(fecha) {
   modoHistorico        = true;
   fechaHistoricaActual = fecha;
@@ -374,27 +222,31 @@ async function cargarFechaHistorica_(fecha) {
   const badge = document.getElementById('badge-modo-historico');
   if (badge) badge.textContent = `📅 ${formatearFecha_(fecha)}`;
 
-  document.getElementById('tabla-completa-container').innerHTML = `
-    <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
-    <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
-    <div class="skeleton skeleton-row" style="height:60px"></div>`;
+  const contTabla = document.getElementById('tabla-completa-container');
+  if (contTabla) {
+    contTabla.innerHTML = `
+      <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
+      <div class="skeleton skeleton-row" style="height:60px;margin-bottom:8px"></div>
+      <div class="skeleton skeleton-row" style="height:60px"></div>`;
+  }
 
   try {
-    const snapshot       = await cargarSnapshotFecha(fecha);
+    const snapshot         = await cargarSnapshotFecha(fecha);
     cacheScreenerHistorico = snapshot;
-    arbolSectoresCache   = construirArbolSectorIndustria_(snapshot);
+    arbolSectoresCache     = construirArbolSectorIndustria_(snapshot);
     poblarSelectsFiltro_();
     aplicarFiltros_();
   } catch (err) {
-    document.getElementById('tabla-completa-container').innerHTML =
-      `<p style="color:var(--rojo);padding:20px">Error cargando snapshot: ${err.message}</p>`;
+    if (contTabla) {
+      contTabla.innerHTML =
+        `<p style="color:var(--rojo);padding:20px">Error cargando snapshot: ${err.message}</p>`;
+    }
   }
 }
 
-// ── Volver a datos actuales ───────────────────────────────────────────────
 function activarModoActual_() {
-  modoHistorico        = false;
-  fechaHistoricaActual = null;
+  modoHistorico          = false;
+  fechaHistoricaActual   = null;
   cacheScreenerHistorico = [];
 
   document.getElementById('btn-modo-actual')?.classList.add('activo');
@@ -406,21 +258,26 @@ function activarModoActual_() {
   aplicarFiltros_();
 }
 
-// ── Modo comparación: enriquece histórico con delta vs hoy ───────────────
 function activarModoComparacion_() {
   if (!modoHistorico || !cacheScreenerHistorico.length) return;
+
+  // Construye mapa ticker → rank actual para calcular la diferencia
   const rankActualMap = {};
   screenerActualRef.forEach(r => { rankActualMap[r.ticker] = r.rank; });
 
   cacheScreenerHistorico = cacheScreenerHistorico.map(r => ({
     ...r,
     rank_actual: rankActualMap[r.ticker] ?? null,
-    rank_delta:  rankActualMap[r.ticker] != null ? r.rank - rankActualMap[r.ticker] : null
+    // delta positivo = era mejor antes (bajó de posición)
+    // delta negativo = mejoró (subió de posición)
+    rank_delta: rankActualMap[r.ticker] != null
+      ? r.rank - rankActualMap[r.ticker]
+      : null
   }));
+
   aplicarFiltros_(true);
 }
 
-// ── Fila con badge de delta de ranking ───────────────────────────────────
 function filaTickerConDelta_(row, mostrarDelta) {
   const base = filaTicker(row);
   if (!mostrarDelta || row.rank_delta == null) return base;
@@ -433,6 +290,8 @@ function filaTickerConDelta_(row, mostrarDelta) {
 
   return base.replace(
     `<div class="rank-number">#${row.rank ?? '-'}</div>`,
-    `<div class="rank-number" style="display:flex;flex-direction:column;gap:2px">#${row.rank ?? '-'} ${deltaHtml}</div>`
+    `<div class="rank-number" style="display:flex;flex-direction:column;gap:2px">
+      #${row.rank ?? '-'} ${deltaHtml}
+     </div>`
   );
 }
