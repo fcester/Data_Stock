@@ -1,11 +1,17 @@
 
+
 import { filaTicker, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
 import { cargarSnapshotFecha } from './data-loader.js';
 
-let cacheScreenerCompleto = [];      // datos actuales (siempre cargados)
-let cacheScreenerHistorico = [];     // snapshot de la fecha elegida
-let arbolSectoresCache = {};
+let cacheScreenerCompleto  = [];
+let cacheScreenerHistorico = [];
+let arbolSectoresCache     = {};
 let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '' };
+let modoHistorico          = false;
+let fechaHistoricaActual   = null;
+let cacheFechasDisponibles = [];
+let screenerActualRef      = [];   // referencia fija a datos actuales para calcular delta
+
 
 // ── Estado del modo fecha ─────────────────────────────────────────────────
 let modoHistorico = false;           // false = datos actuales, true = snapshot histórico
