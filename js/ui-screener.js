@@ -156,17 +156,30 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
   document.getElementById('btn-modo-actual')
     ?.addEventListener('click', activarModoActual_);
 
+  
   document.getElementById('btn-modo-historico')
     ?.addEventListener('click', () => {
       const selectorDiv = document.getElementById('selector-fecha-historico');
       if (selectorDiv) {
         selectorDiv.classList.remove('oculto');
-        selectorDiv.style.display = 'flex';
+        selectorDiv.style.display = 'flex';   // necesario para override del .oculto
       }
       document.getElementById('btn-modo-historico')?.classList.add('activo');
       document.getElementById('btn-modo-actual')?.classList.remove('activo');
+
+      // Si ya hay fechas cargadas, mostrar la más reciente por defecto
       if (cacheFechasDisponibles.length > 0) {
+        const selectFecha = document.getElementById('select-fecha-historico');
+        if (selectFecha) selectFecha.selectedIndex = 0; // más reciente primero
         cargarFechaHistorica_(cacheFechasDisponibles[0]);
+      } else {
+        // Sin historial aún: mostrar aviso en la tabla
+        const cont = document.getElementById('tabla-completa-container');
+        if (cont) cont.innerHTML = `
+          <div class="banner-historico">
+            📅 Aún no hay historial acumulado.
+            El historial se genera automáticamente cada vez que se ejecuta el pipeline Python.
+          </div>`;
       }
     });
 
@@ -244,6 +257,7 @@ async function cargarFechaHistorica_(fecha) {
   }
 }
 
+
 function activarModoActual_() {
   modoHistorico          = false;
   fechaHistoricaActual   = null;
@@ -251,7 +265,19 @@ function activarModoActual_() {
 
   document.getElementById('btn-modo-actual')?.classList.add('activo');
   document.getElementById('btn-modo-historico')?.classList.remove('activo');
-  document.getElementById('selector-fecha-historico')?.classList.add('oculto');
+
+  // Ocultar el selector: quitar el display flex Y agregar clase oculto
+  const selectorDiv = document.getElementById('selector-fecha-historico');
+  if (selectorDiv) {
+    selectorDiv.style.display = '';       // limpiar el inline style
+    selectorDiv.classList.add('oculto'); // .oculto toma control (display:none)
+  }
+
+  arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
+  poblarSelectsFiltro_();
+  aplicarFiltros_();
+}
+
 
   arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
   poblarSelectsFiltro_();
