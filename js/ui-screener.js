@@ -2,7 +2,7 @@
 import { filaTicker, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
 import { cargarSnapshotFecha } from './data-loader.js';
 
-// ── Variables de módulo (sin duplicados) ──────────────────────────────────
+// ── Variables de módulo ───────────────────────────────────────────────────
 let cacheScreenerCompleto  = [];
 let cacheScreenerHistorico = [];
 let arbolSectoresCache     = {};
@@ -10,9 +10,8 @@ let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busque
 let modoHistorico          = false;
 let fechaHistoricaActual   = null;
 let cacheFechasDisponibles = [];
-let screenerActualRef        = [];
-let cachePreciosPorTicker    = {};   // ← precio histórico de cada ticker
-   // referencia fija para calcular delta de rank
+let screenerActualRef      = [];
+let cachePreciosPorTicker  = {};
 
 // ── Árbol sector → industrias ─────────────────────────────────────────────
 function construirArbolSectorIndustria_(screener) {
@@ -83,7 +82,6 @@ function aplicarFiltros_(mostrarDelta = false) {
   const cont = document.getElementById('tabla-completa-container');
   if (!cont) return;
 
-  // Banner solo en modo histórico
   let bannerHtml = '';
   if (modoHistorico && fechaHistoricaActual) {
     bannerHtml = `<div class="banner-historico">
@@ -115,25 +113,26 @@ function aplicarFiltros_(mostrarDelta = false) {
 }
 
 // ── Inicialización principal ──────────────────────────────────────────────
-
 export function inicializarScreener({ screener, precios, fechasHistorial }) {
-  cachePreciosPorTicker = agruparPreciosPorTicker(precios);  // ← nivel módulo
+  cachePreciosPorTicker = agruparPreciosPorTicker(precios);
 
   cacheScreenerCompleto = screener.map(row => {
     const tienePrecio = row.lastPrice !== null && row.lastPrice !== undefined;
     return {
       ...row,
-      lastPrice: tienePrecio ? row.lastPrice : obtenerUltimoPrecio(cachePreciosPorTicker, row.ticker)
+      lastPrice: tienePrecio
+        ? row.lastPrice
+        : obtenerUltimoPrecio(cachePreciosPorTicker, row.ticker)
     };
   });
-  screenerActualRef      = cacheScreenerCompleto;   // referencia fija para delta
+  screenerActualRef      = cacheScreenerCompleto;
   cacheFechasDisponibles = fechasHistorial || [];
 
   arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
   poblarSelectsFiltro_();
   poblarSelectorFechas_(cacheFechasDisponibles);
 
-  // ── Listeners: filtros de texto y selects ────────────────────────────
+  // ── Listeners: filtros ───────────────────────────────────────────────
   document.getElementById('filtro-sector-select')?.addEventListener('change', (e) => {
     filtroActivo.sector   = e.target.value;
     filtroActivo.industry = 'Todas';
@@ -153,28 +152,25 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
     aplicarFiltros_();
   });
 
-  // ── Listeners: modo histórico (?.  = no crash si el HTML aún no está) ─
+  // ── Listeners: modo histórico ────────────────────────────────────────
   document.getElementById('btn-modo-actual')
     ?.addEventListener('click', activarModoActual_);
 
-  
   document.getElementById('btn-modo-historico')
     ?.addEventListener('click', () => {
       const selectorDiv = document.getElementById('selector-fecha-historico');
       if (selectorDiv) {
         selectorDiv.classList.remove('oculto');
-        selectorDiv.style.display = 'flex';   // necesario para override del .oculto
+        selectorDiv.style.display = 'flex';
       }
       document.getElementById('btn-modo-historico')?.classList.add('activo');
       document.getElementById('btn-modo-actual')?.classList.remove('activo');
 
-      // Si ya hay fechas cargadas, mostrar la más reciente por defecto
       if (cacheFechasDisponibles.length > 0) {
         const selectFecha = document.getElementById('select-fecha-historico');
-        if (selectFecha) selectFecha.selectedIndex = 0; // más reciente primero
+        if (selectFecha) selectFecha.selectedIndex = 0;
         cargarFechaHistorica_(cacheFechasDisponibles[0]);
       } else {
-        // Sin historial aún: mostrar aviso en la tabla
         const cont = document.getElementById('tabla-completa-container');
         if (cont) cont.innerHTML = `
           <div class="banner-historico">
@@ -214,10 +210,10 @@ export function mostrarVistaCompleta() {
   aplicarFiltros_();
 }
 
-// ── Funciones del modo histórico ──────────────────────────────────────────
+// ── Selector de fechas históricas ─────────────────────────────────────────
 function poblarSelectorFechas_(fechas) {
   const sel = document.getElementById('select-fecha-historico');
-  if (!sel) return;   // el HTML del modo histórico quizás aún no fue agregado
+  if (!sel) return;
   sel.innerHTML = fechas.length === 0
     ? '<option>Sin historial aún</option>'
     : fechas.map(f => `<option value="${f}">${formatearFecha_(f)}</option>`).join('');
@@ -229,6 +225,7 @@ function formatearFecha_(fechaStr) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// ── Cargar snapshot de una fecha histórica ────────────────────────────────
 async function cargarFechaHistorica_(fecha) {
   modoHistorico        = true;
   fechaHistoricaActual = fecha;
@@ -258,7 +255,7 @@ async function cargarFechaHistorica_(fecha) {
   }
 }
 
-
+// ── Volver a datos actuales ───────────────────────────────────────────────
 function activarModoActual_() {
   modoHistorico          = false;
   fechaHistoricaActual   = null;
@@ -267,11 +264,10 @@ function activarModoActual_() {
   document.getElementById('btn-modo-actual')?.classList.add('activo');
   document.getElementById('btn-modo-historico')?.classList.remove('activo');
 
-  // Ocultar el selector: quitar el display flex Y agregar clase oculto
   const selectorDiv = document.getElementById('selector-fecha-historico');
   if (selectorDiv) {
-    selectorDiv.style.display = '';       // limpiar el inline style
-    selectorDiv.classList.add('oculto'); // .oculto toma control (display:none)
+    selectorDiv.style.display = '';
+    selectorDiv.classList.add('oculto');
   }
 
   arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
@@ -279,36 +275,23 @@ function activarModoActual_() {
   aplicarFiltros_();
 }
 
-
-  arbolSectoresCache = construirArbolSectorIndustria_(cacheScreenerCompleto);
-  poblarSelectsFiltro_();
-  aplicarFiltros_();
-}
-
-
+// ── Modo comparación: delta de rank + rentabilidad ────────────────────────
 function activarModoComparacion_() {
   if (!modoHistorico || !cacheScreenerHistorico.length) return;
 
-  // Mapa de rank Y precio actual por ticker
-  const rankActualMap   = {};
+  const rankActualMap = {};
   screenerActualRef.forEach(r => { rankActualMap[r.ticker] = r.rank; });
 
   cacheScreenerHistorico = cacheScreenerHistorico.map(r => {
-    // ── Delta de rank ───────────────────────────────────────────────
     const rank_actual = rankActualMap[r.ticker] ?? null;
     const rank_delta  = rank_actual != null ? r.rank - rank_actual : null;
 
-    // ── Rentabilidad desde la fecha histórica ───────────────────────
-    // Usa los precios ya en memoria: sin ninguna llamada de red nueva
     let retorno_desde_fecha = null;
     const serie = cachePreciosPorTicker[r.ticker];
 
     if (serie && serie.length > 0 && fechaHistoricaActual) {
-      // Precio en la fecha histórica (primer punto igual o posterior a esa fecha)
       const puntoHistorico = serie.find(p => p.Date >= fechaHistoricaActual);
-      // Precio más reciente disponible
       const puntoActual    = serie[serie.length - 1];
-
       if (puntoHistorico && puntoActual && puntoHistorico.Value > 0) {
         retorno_desde_fecha = (puntoActual.Value / puntoHistorico.Value - 1) * 100;
       }
@@ -320,13 +303,12 @@ function activarModoComparacion_() {
   aplicarFiltros_(true);
 }
 
-
-
+// ── Fila con delta de rank y rentabilidad ─────────────────────────────────
 function filaTickerConDelta_(row, mostrarDelta) {
   let base = filaTicker(row);
   if (!mostrarDelta) return base;
 
-  // ── 1. Badge de delta de rank ────────────────────────────────────────
+  // 1. Badge de delta de rank
   if (row.rank_delta != null) {
     const delta = row.rank_delta;
     let deltaHtml;
@@ -342,19 +324,17 @@ function filaTickerConDelta_(row, mostrarDelta) {
     );
   }
 
-  // ── 2. Rentabilidad desde la fecha histórica ─────────────────────────
+  // 2. Rentabilidad desde la fecha histórica
   if (row.retorno_desde_fecha != null) {
-    const ret     = row.retorno_desde_fecha;
-    const positivo = ret >= 0;
-    const color   = positivo ? 'var(--verde)' : 'var(--rojo)';
-    const signo   = positivo ? '+' : '';
-    const flecha  = positivo ? '↑' : '↓';
+    const ret    = row.retorno_desde_fecha;
+    const color  = ret >= 0 ? 'var(--verde)' : 'var(--rojo)';
+    const signo  = ret >= 0 ? '+' : '';
+    const flecha = ret >= 0 ? '↑' : '↓';
 
     const retHtml = `<div class="retorno-historico" style="color:${color}">
       ${flecha} ${signo}${ret.toFixed(2)}%
     </div>`;
 
-    // Inserta DESPUÉS del bloque precio-mini, antes del score-col
     base = base.replace(
       /(<div class="precio-mini">[\s\S]*?<\/div>)/,
       `$1${retHtml}`
