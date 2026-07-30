@@ -240,12 +240,65 @@ function normalizarValor_(columna, valor) {
 }
 
 // ===== CARGA INICIAL: universo completo (screener + avanzados) + los dos parquet de series =====
+
+// ── NUEVO: fechas disponibles en el historial del screener ──────────────
+// Devuelve solo los snapshot_date únicos ordenados DESC (más reciente primero).
+// NO descarga todo el parquet, DuckDB filtra en origen.
+export async function cargarFechasHistorial() {
+  const url = BASE_URL + 'Stock_Screener_History.parquet';
+  try {
+    const filas = await consultarSQL(`
+      SELECT DISTINCT snapshot_date
+      FROM read_parquet('${url}')
+      ORDER BY snapshot_date DESC
+    `);
+    return filas.map(f => f.snapshot_date);
+  } catch (e) {
+    console.warn('Sin historial disponible aún:', e.message);
+    return [];
+  }
+}
+
+// ── NUEVO: snapshot completo de una fecha específica ────────────────────
+export async function cargarSnapshotFecha(fecha) {
+  const url = BASE_URL + 'Stock_Screener_History.parquet';
+  return consultarSQL(`
+    SELECT *
+    FROM read_parquet('${url}')
+    WHERE snapshot_date = '${fecha}'
+    ORDER BY rank ASC NULLS LAST
+  `);
+}
+
+// ── NUEVO: evolución histórica de un ticker individual ─────────────────
+// Para el gráfico de ranking/score en el panel de detalle.
+export async function cargarEvolucionTicker(ticker) {
+  const url = BASE_URL + 'Stock_Screener_History.parquet';
+  return consultarSQL(`
+    SELECT
+      snapshot_date,
+      rank,
+      score_FINAL_adj,
+      rating,
+      score_valuation,
+      score_profitability,
+      score_growth,
+      score_financial,
+      score_momentum,
+      score_fundamental_momentum
+    FROM read_parquet('${url}')
+    WHERE TRIM(CAST(ticker AS VARCHAR)) = '${ticker}'
+    ORDER BY snapshot_date ASC
+  `);
+}
+
+// ── ACTUALIZAR cargarTodosLosDatos para incluir fechas del historial ────
 export async function cargarTodosLosDatos() {
-  const [screener, precios, fundamentales] = await Promise.all([
+  const [screener, precios, fundamentales, fechasHistorial] = await Promise.all([
     cargarUniversoCompleto(),
     cargarParquetCompleto('Actual_Stock.parquet'),
-    cargarParquetCompleto('stock_fundamentals_history.parquet')
+    cargarParquetCompleto('stock_fundamentals_history.parquet'),
+    cargarFechasHistorial()                          // ← NUEVO
   ]);
-
-  return { screener, precios, fundamentales };
+  return { screener, precios, fundamentales, fechasHistorial };  // ← NUEVO campo
 }
