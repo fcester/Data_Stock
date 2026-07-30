@@ -1,9 +1,18 @@
 
 import { filaTicker, renderKpisGlobales, agruparPreciosPorTicker, obtenerUltimoPrecio } from './ui-common.js';
+import { cargarSnapshotFecha } from './data-loader.js';
 
-let cacheScreenerCompleto = [];
+let cacheScreenerCompleto = [];      // datos actuales (siempre cargados)
+let cacheScreenerHistorico = [];     // snapshot de la fecha elegida
 let arbolSectoresCache = {};
 let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '' };
+
+// ── Estado del modo fecha ─────────────────────────────────────────────────
+let modoHistorico = false;           // false = datos actuales, true = snapshot histórico
+let fechaHistoricaActual = null;     // fecha seleccionada en el selector
+let cacheFechasDisponibles = [];     // lista de fechas del historial
+let screenerActualParaComparar = []; // referencia a datos actuales para el diff de rank
+
 
 function construirArbolSectorIndustria_(screener) {
   const arbol = {};
