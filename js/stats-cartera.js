@@ -175,6 +175,7 @@ export function calcularCartera(seleccion, montoTotal, metodo, pesosManualesOpci
 
   const { retornosPorTicker } = alinearRetornosPorFecha_(preciosPorTicker, tickers, VENTANA_CARTERA_DIAS);
 
+  
   const detalleActivos = seleccion.map(t => {
     const serie = preciosPorTicker[t.ticker] || [];
     const kpis = calcularKpisPrecio_(serie, VENTANA_CARTERA_DIAS);
@@ -194,8 +195,18 @@ export function calcularCartera(seleccion, montoTotal, metodo, pesosManualesOpci
       volatilidad_anualizada: kpis.volatilidad_anualizada,
       rendimiento_ytd: kpis.rendimiento_ytd,
       max_drawdown: kpis.max_drawdown,
+      // ── NUEVOS ──
+      roic:               t.roic              ?? null,
+      fcf_yield:          t.fcf_yield         ?? null,
+      calmar_ratio:       t.calmar_ratio      ?? null,
+      analyst_conviction: t.analyst_conviction ?? null,
+      net_debt_to_ebitda: t.net_debt_to_ebitda ?? null,
+      rsi_14:             t.rsi_14            ?? null,
+      momentum_3m:        t.momentum_3m       ?? null,
+      beta_adj:           t.beta_adj          ?? null,
     };
   });
+
 
   const n = detalleActivos.length;
   let varianzaCartera = 0;
@@ -228,6 +239,21 @@ export function calcularCartera(seleccion, montoTotal, metodo, pesosManualesOpci
   }
   const correlacionVsMercado = correlacionAlineada_(retornosCarteraPonderados, indiceMercado);
 
+  
+  // Calcular métricas nuevas ponderadas de la cartera
+  // filter(a => a.X !== null) evita que un NaN arruine toda la suma
+  const roicCartera = detalleActivos
+    .filter(a => a.roic !== null && !Number.isNaN(a.roic))
+    .reduce((sum, a) => sum + a.peso * a.roic, 0);
+
+  const calmarCartera = detalleActivos
+    .filter(a => a.calmar_ratio !== null && !Number.isNaN(a.calmar_ratio))
+    .reduce((sum, a) => sum + a.peso * a.calmar_ratio, 0);
+
+  const conviccionCartera = detalleActivos
+    .filter(a => a.analyst_conviction !== null && !Number.isNaN(a.analyst_conviction))
+    .reduce((sum, a) => sum + a.peso * a.analyst_conviction, 0);
+
   return {
     detalleActivos,
     resumen: {
@@ -240,9 +266,14 @@ export function calcularCartera(seleccion, montoTotal, metodo, pesosManualesOpci
       sectoresUnicos,
       industriasUnicas,
       correlacionVsMercado,
-      ventanaDiasUsada: VENTANA_CARTERA_DIAS
+      ventanaDiasUsada: VENTANA_CARTERA_DIAS,
+      // ── NUEVAS métricas de cartera ──
+      roicCartera,
+      calmarCartera,
+      conviccionCartera,
     }
   };
+
 }
 
 // ===== SUGERIDOR DE CARTERA (feature nueva) =====
