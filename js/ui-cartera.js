@@ -470,7 +470,29 @@ function pintarDonutsCartera_(activos) {
   });
 }
 
+
 export function inicializarCartera({ screener, precios }) {
+
+  // ── Guard: verificar que el HTML de cartera está completo antes de continuar ──
+  // Si alguno de estos IDs no existe, el HTML está roto y no tiene sentido seguir.
+  // Así evitamos un cascade de errores null en cada addEventListener.
+  const IDS_REQUERIDOS = [
+    'btn-sugerir-cartera', 'kpis-sugeridor', 'sugeridor-n-activos',
+    'cartera-filtro-sector', 'cartera-filtro-industry', 'cartera-filtro-rating',
+    'buscador-tabla-cartera', 'tabla-seleccion-cartera-body',
+    'contador-seleccionados', 'monto-total', 'btn-calcular-cartera',
+    'resultado-cartera', 'tabla-pesos-manuales'
+  ];
+
+  const faltantes = IDS_REQUERIDOS.filter(id => !document.getElementById(id));
+  if (faltantes.length > 0) {
+    console.error('❌ inicializarCartera abortado — elementos faltantes en el DOM:');
+    console.error('   ', faltantes.join(', '));
+    console.error('   → Revisá que index.html contiene la sección vista-cartera completa y sin errores de anidado HTML');
+    return; // salir limpiamente, el resto de la app sigue funcionando
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   cacheUniverso = screener;
   cachePrecios = precios;
   cacheTablaCartera = screener;
@@ -486,6 +508,8 @@ export function inicializarCartera({ screener, precios }) {
     actualizarOpcionesIndustriaCartera_(e.target.value);
     aplicarFiltrosCartera_();
   });
+  // ... resto igual, sin cambios
+
   document.getElementById('cartera-filtro-industry').addEventListener('change', (e) => {
     filtroCartera.industry = e.target.value;
     aplicarFiltrosCartera_();
