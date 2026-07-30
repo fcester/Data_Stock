@@ -152,40 +152,61 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
     aplicarFiltros_();
   });
 
-  // ── NUEVOS: Listeners modo fecha ────────────────────────────────────
-  document.getElementById('btn-modo-actual').addEventListener('click', () => {
-    activarModoActual_();
-  });
 
-  document.getElementById('btn-modo-historico').addEventListener('click', () => {
-    document.getElementById('selector-fecha-historico').classList.remove('oculto');
-    document.getElementById('selector-fecha-historico').style.display = 'flex';
-    document.getElementById('btn-modo-historico').classList.add('activo');
-    document.getElementById('btn-modo-actual').classList.remove('activo');
-    // Carga la primera fecha disponible por defecto
-    if (cacheFechasDisponibles.length > 0) {
-      cargarFechaHistorica_(cacheFechasDisponibles[0]);
-    }
-  });
+  // ── NUEVOS: Listeners modo fecha (solo si el HTML ya fue actualizado) ──
+  const btnModoActual     = document.getElementById('btn-modo-actual');
+  const btnModoHistorico  = document.getElementById('btn-modo-historico');
+  const selectFecha       = document.getElementById('select-fecha-historico');
+  const btnComparar       = document.getElementById('btn-comparar-actual');
 
-  document.getElementById('select-fecha-historico').addEventListener('change', (e) => {
-    if (e.target.value) cargarFechaHistorica_(e.target.value);
-  });
+  if (btnModoActual) {
+    btnModoActual.addEventListener('click', () => activarModoActual_());
+  }
 
-  document.getElementById('btn-comparar-actual').addEventListener('click', () => {
-    activarModoComparacion_();
-  });
+  if (btnModoHistorico) {
+    btnModoHistorico.addEventListener('click', () => {
+      const selectorDiv = document.getElementById('selector-fecha-historico');
+      if (selectorDiv) {
+        selectorDiv.classList.remove('oculto');
+        selectorDiv.style.display = 'flex';
+      }
+      btnModoHistorico.classList.add('activo');
+      if (btnModoActual) btnModoActual.classList.remove('activo');
+      if (cacheFechasDisponibles.length > 0) {
+        cargarFechaHistorica_(cacheFechasDisponibles[0]);
+      }
+    });
+  }
+
+  if (selectFecha) {
+    selectFecha.addEventListener('change', (e) => {
+      if (e.target.value) cargarFechaHistorica_(e.target.value);
+    });
+  }
+
+  if (btnComparar) {
+    btnComparar.addEventListener('click', () => activarModoComparacion_());
+  }
+
 }
 
 // ── Poblar el select de fechas históricas ────────────────────────────────
+
 function poblarSelectorFechas_(fechas) {
   const sel = document.getElementById('select-fecha-historico');
+  // El elemento solo existe si ya se actualizó index.html con el modo-fecha-bar
+  // Si no existe, salimos silenciosamente sin romper nada
+  if (!sel) {
+    console.warn('⚠ #select-fecha-historico no encontrado — el HTML del modo histórico aún no fue agregado');
+    return;
+  }
   if (fechas.length === 0) {
     sel.innerHTML = '<option>Sin historial disponible</option>';
     return;
   }
   sel.innerHTML = fechas.map(f => `<option value="${f}">${formatearFecha_(f)}</option>`).join('');
 }
+
 
 function formatearFecha_(fechaStr) {
   const d = new Date(fechaStr + 'T00:00:00');
