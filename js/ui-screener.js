@@ -172,6 +172,23 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
   document.getElementById('btn-comparar-actual')?.addEventListener('click', activarModoComparacion_);
 }
 
+  
+  // ── Recibir filtro desde la página de Mercado ──────────────────────
+  document.addEventListener('filtrar-screener', (e) => {
+    const { sector, industry } = e.detail;
+    filtroActivo.sector   = sector   || 'Todos';
+    filtroActivo.industry = industry || 'Todas';
+    filtroActivo.rating   = 'Todos';
+    filtroActivo.busqueda = '';
+    // Sincronizar selects visualmente
+    const selSector = document.getElementById('filtro-sector-select');
+    if (selSector) selSector.value = filtroActivo.sector;
+    actualizarOpcionesIndustria_(filtroActivo.sector);
+    const selInd = document.getElementById('filtro-industry-select');
+    if (selInd) selInd.value = filtroActivo.industry;
+    // Aplicar
+    aplicarFiltros_();
+  });
 
   // ── NUEVOS: Listeners modo fecha (solo si el HTML ya fue actualizado) ──
   const btnModoActual     = document.getElementById('btn-modo-actual');
