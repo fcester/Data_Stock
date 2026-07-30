@@ -327,10 +327,14 @@ function pintarDetalle_(ticker) {
     card.addEventListener('click', () => abrirDetalle(card.dataset.ticker));
   });
 
+  
   pintarSelectorRangos_();
   actualizarGrafico_();
-  cargarYPintarEvolucion_(info.ticker);  // ← NUEVO
 
+  // Solo carga la evolución si el canvas existe (requiere que la card esté en el HTML)
+  if (document.getElementById('card-evolucion-ranking')) {
+    cargarYPintarEvolucion_(info.ticker);
+  }
 }
 
 function pintarSelectorRangos_() {
