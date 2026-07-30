@@ -375,9 +375,22 @@ function pintarResultadoCartera_(res) {
 
     <div class="card">
       <h3>Detalle por activo</h3>
+     
       <table class="tabla-activos-cartera">
         <thead>
-          <tr><th>Ticker</th><th>Sector / Industria</th><th>Peso</th><th>Monto</th><th>Rating</th><th>Volatilidad</th><th>Rend. YTD</th><th>Max Drawdown</th></tr>
+          <tr>
+            <th>Ticker</th>
+            <th>Sector / Industria</th>
+            <th>Peso</th>
+            <th>Monto</th>
+            <th>Rating</th>
+            <th>Volatilidad</th>
+            <th>Rend. YTD</th>
+            <th>Max Drawdown</th>
+            <th>ROIC</th>
+            <th>FCF Yield</th>
+            <th>RSI 14</th>
+          </tr>
         </thead>
         <tbody>
           ${activos.map(a => `
@@ -390,10 +403,20 @@ function pintarResultadoCartera_(res) {
               <td>${a.volatilidad_anualizada !== null ? a.volatilidad_anualizada.toFixed(1) + '%' : 'N/D'}</td>
               <td>${flechaRendimiento(a.rendimiento_ytd)}</td>
               <td style="color:var(--rojo)">${a.max_drawdown !== null ? a.max_drawdown.toFixed(1) + '%' : 'N/D'}</td>
+              <td>${a.roic !== null ? (a.roic * 100).toFixed(1) + '%' : 'N/D'}</td>
+              <td>${a.fcf_yield !== null ? (a.fcf_yield * 100).toFixed(1) + '%' : 'N/D'}</td>
+              <td style="color:${
+                a.rsi_14 > 70 ? 'var(--rojo)' :
+                a.rsi_14 < 30 ? 'var(--verde)' :
+                'var(--texto-principal)'
+              };font-weight:600">
+                ${a.rsi_14 !== null ? a.rsi_14.toFixed(0) : 'N/D'}
+              </td>
             </tr>
           `).join('')}
         </tbody>
       </table>
+
     </div>
   `;
   pintarDonutsCartera_(activos);
