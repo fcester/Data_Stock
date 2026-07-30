@@ -211,6 +211,7 @@ function pintarDetalle_(ticker) {
       <canvas id="grafico-precio-detalle" height="220"></canvas>
     </div>
 
+   
     <div class="card">
       <h4>Indicadores de riesgo y mercado</h4>
       <div class="kpis-grid-compacta">
@@ -218,6 +219,10 @@ function pintarDetalle_(ticker) {
         ${renderKpiAvanzado_('Sortino Ratio', info.sortino_ratio, '', 'Similar al Sharpe, pero solo penaliza la volatilidad negativa (caídas).')}
         ${renderKpiAvanzado_('VaR diario 95%', info.var_95_diario !== null && info.var_95_diario !== undefined ? info.var_95_diario * 100 : null, '%', 'En el 95% de los días históricos, la pérdida no superó este valor.')}
         ${renderKpiAvanzado_('Beta', info.beta, '', 'Sensibilidad del precio frente al mercado. 1 = se mueve igual que el mercado.')}
+        ${renderKpiAvanzado_('Beta ajustado', info.beta_adj, '', 'Ajuste Blume (0.67 × Beta + 0.33). Corrige la tendencia a extremos del beta histórico, acercándolo a 1.')}
+        ${renderKpiAvanzado_('Volatilidad Anual', info.volatility_annual !== null && info.volatility_annual !== undefined ? info.volatility_annual * 100 : null, '%', 'Desviación estándar de retornos diarios × √252. Mide la dispersión anualizada del precio.')}
+        ${renderKpiAvanzado_('Max Drawdown', info.max_drawdown !== null && info.max_drawdown !== undefined ? info.max_drawdown * 100 : null, '%', 'Mayor caída desde un pico en el período histórico disponible. Métrica de riesgo real más intuitiva que el VaR.')}
+        ${renderKpiAvanzado_('Calmar Ratio', info.calmar_ratio, '', 'CAGR del período / |Max Drawdown|. Mide el retorno ajustado por la peor caída histórica. > 1 = excelente.')}
       </div>
     </div>
 
@@ -233,6 +238,7 @@ function pintarDetalle_(ticker) {
       </p>
     </div>
 
+    
     <div class="card">
       <h4>Dividendos</h4>
       <p>Dividend Yield: ${info.dividendYield !== null && info.dividendYield !== undefined ? (info.dividendYield * 100).toFixed(2) + '%' : 'N/D'}</p>
@@ -241,7 +247,52 @@ function pintarDetalle_(ticker) {
     </div>
 
     <div class="card">
+      <h4>Valoración profunda</h4>
+      <div class="kpis-grid-compacta">
+        ${renderKpiAvanzado_('FCF Yield', info.fcf_yield !== null && info.fcf_yield !== undefined ? info.fcf_yield * 100 : null, '%', 'Flujo de Caja Libre / Market Cap. Cuánto cash genera la empresa por cada dólar invertido.')}
+        ${renderKpiAvanzado_('Price / FCF', info.price_to_fcf, 'x', 'Precio sobre FCF por acción. Alternativa al P/E basada en caja real, más difícil de manipular contablemente.')}
+        ${renderKpiAvanzado_('Graham Number', info.graham_number, '', 'Precio intrínseco teórico = √(22.5 × EPS × Book Value). Si precio actual < Graham Number → posiblemente subvalorado.')}
+        ${renderKpiAvanzado_('Margen de Seguridad', info.graham_margin_of_safety !== null && info.graham_margin_of_safety !== undefined ? info.graham_margin_of_safety * 100 : null, '%', 'Diferencia % entre Graham Number y precio actual. Positivo = cotiza bajo su valor teórico de Graham.')}
+        ${renderKpiAvanzado_('EV / Sales', info.ev_to_sales, 'x', 'Enterprise Value / Ventas. Útil para empresas sin EBITDA positivo (growth, tech sin profits).')}
+        ${renderKpiAvanzado_('Earnings Quality', info.earnings_quality, 'x', 'OCF / Net Income. > 1: ganancias respaldadas por caja real. < 0.8: posibles accruals elevados o contabilidad agresiva.')}
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Solidez financiera</h4>
+      <div class="kpis-grid-compacta">
+        ${renderKpiAvanzado_('ROIC', info.roic !== null && info.roic !== undefined ? info.roic * 100 : null, '%', 'Return on Invested Capital. Si ROIC > costo de capital (WACC), la empresa destruye valor al crecer.')}
+        ${renderKpiAvanzado_('Net Debt / EBITDA', info.net_debt_to_ebitda, 'x', 'Palanca financiera neta. < 2x: sólido · 2-4x: moderado · > 4x: apalancado y con riesgo.')}
+        ${renderKpiAvanzado_('Interest Coverage', info.interest_coverage, 'x', 'EBIT / Gastos financieros. Cuántas veces puede pagar sus intereses. < 1.5x: riesgo de impago · > 5x: muy sólido.')}
+        ${renderKpiAvanzado_('Asset Turnover', info.asset_turnover, 'x', 'Ventas / Activos Totales. Eficiencia en el uso de activos para generar ingresos. Alto = más eficiente en capital.')}
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Momentum y señales técnicas</h4>
+      <div class="kpis-grid-compacta">
+        ${renderKpiAvanzado_('RSI 14 días', info.rsi_14, '', 'Relative Strength Index. > 70 = sobrecomprado · < 30 = sobrevendido · 30-70 = zona neutral.')}
+        ${renderKpiAvanzado_('Momentum 1M', info.momentum_1m !== null && info.momentum_1m !== undefined ? info.momentum_1m * 100 : null, '%', 'Retorno del precio en el último mes (~21 días hábiles).')}
+        ${renderKpiAvanzado_('Momentum 3M', info.momentum_3m !== null && info.momentum_3m !== undefined ? info.momentum_3m * 100 : null, '%', 'Retorno del precio en los últimos 3 meses (~63 días hábiles).')}
+        ${renderKpiAvanzado_('Momentum 6M', info.momentum_6m !== null && info.momentum_6m !== undefined ? info.momentum_6m * 100 : null, '%', 'Retorno del precio en los últimos 6 meses (~126 días hábiles).')}
+      </div>
+      ${info.rsi_14 !== null && info.rsi_14 !== undefined ? `
+        <div style="margin-top:16px">
+          <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--texto-secundario);margin-bottom:6px">
+            <span>Sobrevendido &lt;30</span>
+            <span style="font-weight:700">RSI: ${info.rsi_14.toFixed(1)}</span>
+            <span>Sobrecomprado &gt;70</span>
+          </div>
+          <div style="position:relative;height:10px;background:linear-gradient(90deg, var(--rojo) 0%, var(--amarillo) 30%, var(--verde) 30%, var(--verde) 70%, var(--amarillo) 70%, var(--rojo) 100%);border-radius:5px">
+            <div style="position:absolute;left:${Math.min(Math.max(info.rsi_14, 0), 100)}%;top:-4px;width:18px;height:18px;background:white;border:3px solid var(--azul-primario);border-radius:50%;transform:translateX(-50%);box-shadow:0 2px 6px rgba(0,0,0,0.25)"></div>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+
+    <div class="card">
       <h4>Desglose del score por categoría</h4>
+
       ${categorias.map(([key, label, valor]) => `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <span class="tooltip-info">${label}<span class="tooltip-texto">${EXPLICACION_CATEGORIAS[key]}</span></span>
