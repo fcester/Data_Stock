@@ -196,8 +196,28 @@
     <div id="tabla-pesos-manuales" class="oculto"></div>
   </div>
 
+  
   <button class="btn-primary" id="btn-calcular-cartera">Calcular cartera</button>
   <div id="resultado-cartera"></div>
+
+  <!-- Simulador histórico: aparece SOLO después de calcular una cartera -->
+  <div id="card-simulacion-historica" class="card oculto">
+    <h3>📅 Simular rendimiento histórico</h3>
+    <p style="color:var(--texto-secundario);font-size:0.85rem;margin-bottom:14px">
+      ¿Cuánto hubiera rendido esta cartera si la hubieras armado en una fecha pasada?
+      Los cálculos usan los precios históricos reales del período seleccionado.
+    </p>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <label class="label-inline" style="font-size:0.85rem">Desde la fecha:</label>
+      <select id="select-fecha-simulacion" class="select-pill"
+              style="width:auto;min-width:160px"></select>
+      <button class="btn-primary" id="btn-simular-historico" style="margin:0">
+        ⏪ Simular
+      </button>
+    </div>
+    <div id="resultado-simulacion" style="margin-top:16px"></div>
+  </div>
+
 </div>
 
 
@@ -215,6 +235,54 @@
   </div>
   <div id="panel-detalle-contenido"></div>
 </div>
+
+<main id="vista-mercado" class="vista oculto">
+  <div class="section-header">
+    <button class="btn-secondary" id="btn-volver-home-mercado">← Volver</button>
+    <h2>🏭 Análisis de Mercado</h2>
+  </div>
+
+  <!-- KPIs globales del mercado -->
+  <section id="kpis-mercado" class="kpis-grid" style="margin-bottom:24px"></section>
+
+  <!-- Controles: tabs + filtros + búsqueda -->
+  <div class="mercado-controles card">
+    <div class="mercado-tabs">
+      <button class="tab-mercado activo" id="tab-sectores" data-tab="sectores">
+        🏭 Por Sector
+      </button>
+      <button class="tab-mercado" id="tab-industrias" data-tab="industrias">
+        🔬 Por Industria
+      </button>
+    </div>
+
+    <div class="mercado-filtros-row">
+      <input type="text" id="buscador-mercado"
+             placeholder="Buscar sector o industria..."
+             class="input-pill" style="flex:1;min-width:180px">
+
+      <div class="filtros-tendencia-group">
+        <button class="btn-filtro-tend activo" data-tend="todos">Todos</button>
+        <button class="btn-filtro-tend" data-tend="sube">↑ Alcistas</button>
+        <button class="btn-filtro-tend" data-tend="baja">↓ Bajistas</button>
+        <button class="btn-filtro-tend" data-tend="estable">→ Estables</button>
+      </div>
+
+      <select id="mercado-orden" class="select-pill" style="width:auto;min-width:170px">
+        <option value="score">Ordenar por Score</option>
+        <option value="mejora">Mayor mejora reciente</option>
+        <option value="tickers">Nº de tickers</option>
+        <option value="nombre">Nombre A-Z</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Breadcrumb para drill-down -->
+  <div id="mercado-breadcrumb" class="oculto mercado-breadcrumb"></div>
+
+  <!-- Contenido dinámico: cards de sectores o industrias -->
+  <div id="mercado-contenido" class="mercado-grid"></div>
+</main>
 
 </body>
 </html>
