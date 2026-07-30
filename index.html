@@ -103,12 +103,26 @@
   <div class="card">
     <h3>1. Seleccioná tus activos (máximo 15)</h3>
 
-    <div class="filtros-bar" style="box-shadow:none;padding:0;margin-bottom:14px">
-      <input type="text" id="buscador-tabla-cartera" placeholder="Buscar por ticker o nombre de empresa...">
+
+    <!-- Barra de modo: Actual vs Histórico -->
+    <div class="modo-fecha-bar">
+      <button class="btn-modo-fecha activo" id="btn-modo-actual">📊 Datos actuales</button>
+      <button class="btn-modo-fecha" id="btn-modo-historico">📅 Ver por fecha</button>
+      <div id="selector-fecha-historico" class="oculto" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <select id="select-fecha-historico" class="select-pill" style="width:auto;min-width:160px"></select>
+        <span id="badge-modo-historico" class="badge badge-neutral" style="font-size:0.75rem"></span>
+        <button class="btn-secondary" id="btn-comparar-actual" style="font-size:0.8rem">
+          ↔ Comparar con hoy
+        </button>
+      </div>
+    </div>
+
+    <div class="filtros-bar">
+      <input type="text" id="buscador" placeholder="Buscar por ticker o nombre de empresa...">
       <div class="selects-fila">
-        <select id="cartera-filtro-sector" class="select-pill"></select>
-        <select id="cartera-filtro-industry" class="select-pill"></select>
-        <select id="cartera-filtro-rating" class="select-pill">
+        <select id="filtro-sector-select" class="select-pill"></select>
+        <select id="filtro-industry-select" class="select-pill"></select>
+        <select id="filtro-rating" class="select-pill">
           <option value="Todos">Todos los ratings</option>
           <option value="Excelente">Excelente</option>
           <option value="Buena">Buena</option>
@@ -118,6 +132,7 @@
         </select>
       </div>
     </div>
+
 
     <div class="contador-seleccion">Seleccionados: <span id="contador-seleccionados">0</span> / 15</div>
     <div class="tabla-cartera-scroll">
