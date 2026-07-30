@@ -3,14 +3,34 @@ import { claseBadge, flechaRendimiento, escapeHtml } from './ui-common.js';
 import { calcularCartera, sugerirCartera } from './stats-cartera.js';
 
 const MAX_CARTERA = 15;
+
+// Reemplazar KPIS_SUGERIDOR con versión expandida:
 const KPIS_SUGERIDOR = [
-  { key: 'score_FINAL_adj', label: 'Score Fundamental' },
-  { key: 'sharpe_ratio', label: 'Sharpe Ratio' },
-  { key: 'sortino_ratio', label: 'Sortino Ratio' },
-  { key: 'piotroski_score_adj', label: 'Piotroski (salud financiera)' },
-  { key: 'analyst_upside', label: 'Upside de analistas' },
-  { key: 'dividend_growth_streak', label: 'Crecimiento de dividendos' },
+  // ── Scoring ──
+  { key: 'score_FINAL_adj',          label: '🏆 Score Fundamental' },
+  { key: 'score_valuation',          label: '💰 Score Valuación' },
+  { key: 'score_profitability',      label: '📈 Score Rentabilidad' },
+  { key: 'score_momentum',           label: '⚡ Score Momentum' },
+  // ── Riesgo ──
+  { key: 'sharpe_ratio',             label: '📊 Sharpe Ratio' },
+  { key: 'sortino_ratio',            label: '🛡 Sortino Ratio' },
+  { key: 'calmar_ratio',             label: '🏔 Calmar Ratio' },
+  // ── Calidad ──
+  { key: 'piotroski_score_adj',      label: '🏥 Piotroski (salud financiera)' },
+  { key: 'roic',                     label: '🔄 ROIC' },
+  { key: 'earnings_quality',         label: '✅ Calidad de Ganancias' },
+  // ── Valoración ──
+  { key: 'fcf_yield',                label: '💵 FCF Yield' },
+  { key: 'graham_margin_of_safety',  label: '🔒 Margen de Seguridad (Graham)' },
+  // ── Analistas ──
+  { key: 'analyst_upside',           label: '🎯 Upside de analistas' },
+  { key: 'analyst_conviction',       label: '🤝 Convicción de analistas' },
+  // ── Dividendos ──
+  { key: 'dividend_growth_streak',   label: '📅 Crecimiento de dividendos' },
+  // ── Momentum ──
+  { key: 'momentum_3m',              label: '🚀 Momentum 3 meses' },
 ];
+
 
 let cacheUniverso = [];
 let cachePrecios = [];
