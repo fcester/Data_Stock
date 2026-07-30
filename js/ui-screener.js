@@ -309,11 +309,12 @@ function filaTickerConDelta_(row, mostrarDelta) {
   if (!mostrarDelta) return base;
 
   // 1. Badge de delta de rank
+  
   if (row.rank_delta != null) {
     const delta = row.rank_delta;
     let deltaHtml;
-    if      (delta < 0) deltaHtml = `<span class="rank-delta rank-delta-sube">↑${Math.abs(delta)} vs hoy</span>`;
-    else if (delta > 0) deltaHtml = `<span class="rank-delta rank-delta-baja">↓${delta} vs hoy</span>`;
+    if      (delta > 0) deltaHtml = `<span class="rank-delta rank-delta-sube">↑${delta} pos. vs hoy</span>`;
+    else if (delta < 0) deltaHtml = `<span class="rank-delta rank-delta-baja">↓${Math.abs(delta)} pos. vs hoy</span>`;
     else                deltaHtml = `<span class="rank-delta rank-delta-igual">= igual</span>`;
 
     base = base.replace(
