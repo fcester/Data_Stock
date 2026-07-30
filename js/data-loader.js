@@ -3,34 +3,42 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 
 const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
 
+
 let dbInstance = null;
+let dbPromise  = null;   // ← guarda la promesa en curso para no lanzar dos veces
 let httpfsListo = false;
 
 async function obtenerDB_() {
+  // Si ya está lista, la devuelve directamente
   if (dbInstance) return dbInstance;
 
-  console.log('Iniciando DuckDB...');
-  const CDN_BUNDLES = duckdb.getJsDelivrBundles();
-  const bundle = await duckdb.selectBundle(CDN_BUNDLES);
-  console.log('Bundle seleccionado:', bundle);
+  // Si ya hay una inicialización en curso (por Promise.all simultáneo),
+  // todas las llamadas paralelas esperan la MISMA promesa en vez de
+  // crear instancias duplicadas
+  if (dbPromise) return dbPromise;
 
-  const workerUrl = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
-  );
+  dbPromise = (async () => {
+    const CDN_BUNDLES = duckdb.getJsDelivrBundles();
+    const bundle      = await duckdb.selectBundle(CDN_BUNDLES);
 
-  const worker = new Worker(workerUrl);
-  console.log('Worker creado');
+    const workerUrl = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
 
-  const logger = new duckdb.ConsoleLogger();
-  const db = new duckdb.AsyncDuckDB(logger, worker);
-  console.log('Instanciando DB...');
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  console.log('DB instanciada correctamente');
+    const worker = new Worker(workerUrl);
+    const logger = new duckdb.ConsoleLogger();
+    const db     = new duckdb.AsyncDuckDB(logger, worker);
 
-  URL.revokeObjectURL(workerUrl);
-  dbInstance = db;
-  return db;
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(workerUrl);
+
+    dbInstance = db;
+    return db;
+  })();
+
+  return dbPromise;
 }
+
 
 async function asegurarHttpfs_(conn) {
   if (httpfsListo) return;
