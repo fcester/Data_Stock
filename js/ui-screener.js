@@ -10,7 +10,9 @@ let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busque
 let modoHistorico          = false;
 let fechaHistoricaActual   = null;
 let cacheFechasDisponibles = [];
-let screenerActualRef      = [];   // referencia fija para calcular delta de rank
+let screenerActualRef        = [];
+let cachePreciosPorTicker    = {};   // ← precio histórico de cada ticker
+   // referencia fija para calcular delta de rank
 
 // ── Árbol sector → industrias ─────────────────────────────────────────────
 function construirArbolSectorIndustria_(screener) {
@@ -113,16 +115,15 @@ function aplicarFiltros_(mostrarDelta = false) {
 }
 
 // ── Inicialización principal ──────────────────────────────────────────────
+
 export function inicializarScreener({ screener, precios, fechasHistorial }) {
-  const preciosPorTicker = agruparPreciosPorTicker(precios);
+  cachePreciosPorTicker = agruparPreciosPorTicker(precios);  // ← nivel módulo
 
   cacheScreenerCompleto = screener.map(row => {
     const tienePrecio = row.lastPrice !== null && row.lastPrice !== undefined;
     return {
       ...row,
-      lastPrice: tienePrecio
-        ? row.lastPrice
-        : obtenerUltimoPrecio(preciosPorTicker, row.ticker)
+      lastPrice: tienePrecio ? row.lastPrice : obtenerUltimoPrecio(cachePreciosPorTicker, row.ticker)
     };
   });
   screenerActualRef      = cacheScreenerCompleto;   // referencia fija para delta
@@ -284,40 +285,81 @@ function activarModoActual_() {
   aplicarFiltros_();
 }
 
+
 function activarModoComparacion_() {
   if (!modoHistorico || !cacheScreenerHistorico.length) return;
 
-  // Construye mapa ticker → rank actual para calcular la diferencia
-  const rankActualMap = {};
+  // Mapa de rank Y precio actual por ticker
+  const rankActualMap   = {};
   screenerActualRef.forEach(r => { rankActualMap[r.ticker] = r.rank; });
 
-  cacheScreenerHistorico = cacheScreenerHistorico.map(r => ({
-    ...r,
-    rank_actual: rankActualMap[r.ticker] ?? null,
-    // delta positivo = era mejor antes (bajó de posición)
-    // delta negativo = mejoró (subió de posición)
-    rank_delta: rankActualMap[r.ticker] != null
-      ? r.rank - rankActualMap[r.ticker]
-      : null
-  }));
+  cacheScreenerHistorico = cacheScreenerHistorico.map(r => {
+    // ── Delta de rank ───────────────────────────────────────────────
+    const rank_actual = rankActualMap[r.ticker] ?? null;
+    const rank_delta  = rank_actual != null ? r.rank - rank_actual : null;
+
+    // ── Rentabilidad desde la fecha histórica ───────────────────────
+    // Usa los precios ya en memoria: sin ninguna llamada de red nueva
+    let retorno_desde_fecha = null;
+    const serie = cachePreciosPorTicker[r.ticker];
+
+    if (serie && serie.length > 0 && fechaHistoricaActual) {
+      // Precio en la fecha histórica (primer punto igual o posterior a esa fecha)
+      const puntoHistorico = serie.find(p => p.Date >= fechaHistoricaActual);
+      // Precio más reciente disponible
+      const puntoActual    = serie[serie.length - 1];
+
+      if (puntoHistorico && puntoActual && puntoHistorico.Value > 0) {
+        retorno_desde_fecha = (puntoActual.Value / puntoHistorico.Value - 1) * 100;
+      }
+    }
+
+    return { ...r, rank_actual, rank_delta, retorno_desde_fecha };
+  });
 
   aplicarFiltros_(true);
 }
 
+
+
 function filaTickerConDelta_(row, mostrarDelta) {
-  const base = filaTicker(row);
-  if (!mostrarDelta || row.rank_delta == null) return base;
+  let base = filaTicker(row);
+  if (!mostrarDelta) return base;
 
-  const delta = row.rank_delta;
-  let deltaHtml;
-  if      (delta < 0) deltaHtml = `<span class="rank-delta rank-delta-sube">↑${Math.abs(delta)} vs hoy</span>`;
-  else if (delta > 0) deltaHtml = `<span class="rank-delta rank-delta-baja">↓${delta} vs hoy</span>`;
-  else                deltaHtml = `<span class="rank-delta rank-delta-igual">= igual</span>`;
+  // ── 1. Badge de delta de rank ────────────────────────────────────────
+  if (row.rank_delta != null) {
+    const delta = row.rank_delta;
+    let deltaHtml;
+    if      (delta < 0) deltaHtml = `<span class="rank-delta rank-delta-sube">↑${Math.abs(delta)} vs hoy</span>`;
+    else if (delta > 0) deltaHtml = `<span class="rank-delta rank-delta-baja">↓${delta} vs hoy</span>`;
+    else                deltaHtml = `<span class="rank-delta rank-delta-igual">= igual</span>`;
 
-  return base.replace(
-    `<div class="rank-number">#${row.rank ?? '-'}</div>`,
-    `<div class="rank-number" style="display:flex;flex-direction:column;gap:2px">
-      #${row.rank ?? '-'} ${deltaHtml}
-     </div>`
-  );
+    base = base.replace(
+      `<div class="rank-number">#${row.rank ?? '-'}</div>`,
+      `<div class="rank-number" style="display:flex;flex-direction:column;gap:2px">
+        #${row.rank ?? '-'} ${deltaHtml}
+       </div>`
+    );
+  }
+
+  // ── 2. Rentabilidad desde la fecha histórica ─────────────────────────
+  if (row.retorno_desde_fecha != null) {
+    const ret     = row.retorno_desde_fecha;
+    const positivo = ret >= 0;
+    const color   = positivo ? 'var(--verde)' : 'var(--rojo)';
+    const signo   = positivo ? '+' : '';
+    const flecha  = positivo ? '↑' : '↓';
+
+    const retHtml = `<div class="retorno-historico" style="color:${color}">
+      ${flecha} ${signo}${ret.toFixed(2)}%
+    </div>`;
+
+    // Inserta DESPUÉS del bloque precio-mini, antes del score-col
+    base = base.replace(
+      /(<div class="precio-mini">[\s\S]*?<\/div>)/,
+      `$1${retHtml}`
+    );
+  }
+
+  return base;
 }
