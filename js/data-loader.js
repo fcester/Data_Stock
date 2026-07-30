@@ -122,7 +122,31 @@ export async function cargarUniversoCompleto() {
       a.heldPercentInsiders, a.heldPercentInstitutions,
       a.shortRatio, a.sharesShort,
       a.dividend_growth_streak, a.dividend_growth_avg,
-      a.quickRatio, a.bookValue, a.pegRatio
+      a.quickRatio, a.bookValue, a.pegRatio,
+      a.fcf_yield,
+      a.price_to_fcf,
+      a.graham_number,
+      a.graham_margin_of_safety,
+      a.ev_to_sales,
+      a.earnings_quality,
+      a.max_drawdown,
+      a.current_drawdown,
+      a.calmar_ratio,
+      a.volatility_annual,
+      a.rsi_14,
+      a.momentum_1m,
+      a.momentum_3m,
+      a.momentum_6m,
+      a.net_debt,
+      a.net_debt_to_ebitda,
+      a.roic,
+      a.asset_turnover,
+      a.interest_coverage,
+      a.working_capital,
+      a.analyst_conviction,
+      a.short_pct_float,
+      a.beta_adj
+      
     FROM tickers_norm t
     LEFT JOIN screener_norm s  ON t.ticker = s.ticker
     LEFT JOIN avanzados_norm a ON t.ticker = a.ticker
