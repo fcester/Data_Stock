@@ -1,5 +1,5 @@
 
-import { claseBadge, flechaRendimiento, escapeHtml } from './ui-common.js';
+import { claseBadge, flechaRendimiento, escapeHtml, agruparPreciosPorTicker } from './ui-common.js';
 import { calcularCartera, sugerirCartera } from './stats-cartera.js';
 
 const MAX_CARTERA = 15;
@@ -425,8 +425,14 @@ function pintarResultadoCartera_(res) {
 
     </div>
   `;
+  
   pintarDonutsCartera_(activos);
+
+  // Activar simulador histórico con los activos calculados
+  const preciosPorTicker = agruparPreciosPorTicker(cachePrecios);
+  activarSimuladorHistorico_(activos, preciosPorTicker);
 }
+
 
 const PALETA_DONUT = ['#2649B2', '#4A74F3', '#8E7DE3', '#9D5CE6', '#D4D9F0', '#6C8BE0', '#B55CE6'];
 let chartDonutCartera = null;
@@ -467,6 +473,117 @@ function pintarDonutsCartera_(activos) {
         tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw}%` } }
       }
     }
+  });
+}
+
+// ── SIMULADOR HISTÓRICO DE CARTERA ───────────────────────────────────────
+// Calcula el retorno de una cartera si se hubiera armado en una fecha pasada.
+// Usa los precios ya cargados en memoria (cachePrecios). Sin llamadas de red.
+function simularDesde_(detalleActivos, preciosPorTicker, fechaInicio) {
+  const cont = document.getElementById('resultado-simulacion');
+  if (!cont) return;
+
+  const resultados = detalleActivos.map(activo => {
+    const serie = (preciosPorTicker[activo.ticker] || []);
+    // Precio en la fecha de inicio (o el más cercano posterior disponible)
+    const puntoInicio = serie.find(p => p.Date >= fechaInicio);
+    const puntoActual = serie.length > 0 ? serie[serie.length - 1] : null;
+
+    if (!puntoInicio || !puntoActual || puntoInicio.Value === 0) {
+      return { ...activo, retorno: null, precioInicio: null, precioActual: null };
+    }
+    const retorno = (puntoActual.Value / puntoInicio.Value) - 1;
+    return {
+      ...activo,
+      retorno,
+      precioInicio:  puntoInicio.Value,
+      precioActual:  puntoActual.Value,
+      fechaRealUsada: puntoInicio.Date
+    };
+  });
+
+  const conDato       = resultados.filter(r => r.retorno !== null);
+  const retornoTotal  = conDato.reduce((s, r) => s + r.peso * r.retorno, 0);
+  const mejorActivo   = [...conDato].sort((a, b) => b.retorno - a.retorno)[0];
+  const peorActivo    = [...conDato].sort((a, b) => a.retorno - b.retorno)[0];
+  const colorTotal    = retornoTotal >= 0 ? 'var(--verde)' : 'var(--rojo)';
+  const flechaTotal   = retornoTotal >= 0 ? '↑' : '↓';
+
+  cont.innerHTML = `
+    <div class="simulacion-resumen-grid" style="margin-top:16px">
+      <div class="kpi-card">
+        <div class="kpi-valor" style="color:${colorTotal}">
+          ${flechaTotal} ${(retornoTotal * 100).toFixed(2)}%
+        </div>
+        <div class="kpi-label">Retorno total ponderado</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-valor" style="color:var(--verde)">
+          ${mejorActivo ? mejorActivo.ticker : 'N/D'}
+        </div>
+        <div class="kpi-label">Mejor activo (+${mejorActivo ? (mejorActivo.retorno * 100).toFixed(1) : 0}%)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-valor" style="color:var(--rojo)">
+          ${peorActivo ? peorActivo.ticker : 'N/D'}
+        </div>
+        <div class="kpi-label">Peor activo (${peorActivo ? (peorActivo.retorno * 100).toFixed(1) : 0}%)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-valor">${conDato.length} / ${resultados.length}</div>
+        <div class="kpi-label">Activos con datos completos</div>
+      </div>
+    </div>
+
+    <h4 style="margin:16px 0 8px">Detalle por activo</h4>
+    ${resultados.map(r => `
+      <div class="sim-activo-row">
+        <div style="font-weight:700;min-width:60px">${escapeHtml(r.ticker)}</div>
+        <div style="font-size:0.78rem;color:var(--texto-secundario);flex:1">
+          ${r.precioInicio ? `$${r.precioInicio.toFixed(2)} → $${r.precioActual.toFixed(2)}` : 'Sin precio en esa fecha'}
+          ${r.fechaRealUsada && r.fechaRealUsada !== document.getElementById('select-fecha-simulacion')?.value
+            ? `<span style="opacity:0.6"> (fecha real: ${r.fechaRealUsada})</span>` : ''}
+        </div>
+        <div style="font-weight:700;min-width:70px;text-align:right;color:${
+          r.retorno === null ? 'var(--texto-secundario)' :
+          r.retorno >= 0    ? 'var(--verde)' : 'var(--rojo)'
+        }">
+          ${r.retorno === null ? 'N/D' : `${r.retorno >= 0 ? '+' : ''}${(r.retorno * 100).toFixed(1)}%`}
+        </div>
+        <div style="min-width:55px;text-align:right;font-size:0.78rem;color:var(--texto-secundario)">
+          ${(r.peso * 100).toFixed(1)}% peso
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function activarSimuladorHistorico_(detalleActivos, preciosPorTicker) {
+  const card = document.getElementById('card-simulacion-historica');
+  const sel  = document.getElementById('select-fecha-simulacion');
+  if (!card || !sel) return;
+
+  // Recopilar fechas disponibles de las series de precio de los tickers seleccionados
+  const todasFechas = new Set();
+  detalleActivos.forEach(a => {
+    (preciosPorTicker[a.ticker] || []).forEach(p => todasFechas.add(p.Date));
+  });
+  const fechasOrdenadas = Array.from(todasFechas).sort();
+
+  if (fechasOrdenadas.length < 2) {
+    card.classList.add('oculto');
+    return;
+  }
+
+  sel.innerHTML = fechasOrdenadas.map(f => `<option value="${f}">${f}</option>`).join('');
+  // Preseleccionar ~30 días atrás (si hay suficiente historial)
+  const idxRef = Math.max(0, fechasOrdenadas.length - 31);
+  sel.selectedIndex = idxRef;
+
+  card.classList.remove('oculto');
+
+  document.getElementById('btn-simular-historico')?.addEventListener('click', () => {
+    simularDesde_(detalleActivos, preciosPorTicker, sel.value);
   });
 }
 
