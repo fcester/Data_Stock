@@ -1,5 +1,8 @@
 
+
 import { claseBadge, escapeHtml } from './ui-common.js';
+import { cargarEvolucionTicker } from './data-loader.js';
+
 
 let cacheScreenerCompleto = [];
 let cachePrecios = [];
@@ -304,10 +307,20 @@ function pintarDetalle_(ticker) {
       `).join('')}
     </div>
 
+    
+    <div class="card" id="card-evolucion-ranking">
+      <div class="evolucion-header">
+        <h4>Evolución histórica del ranking</h4>
+        <span style="font-size:0.8rem;color:var(--texto-secundario)">Cargando...</span>
+      </div>
+      <canvas id="grafico-evolucion-ranking" height="180"></canvas>
+    </div>
+
     <div class="card">
       <h4>Tickers similares (mismo sector e industria)</h4>
       <div class="similares-grid">${htmlSimilares}</div>
     </div>
+
   `;
 
   contenido.querySelectorAll('.similar-card').forEach(card => {
@@ -316,6 +329,8 @@ function pintarDetalle_(ticker) {
 
   pintarSelectorRangos_();
   actualizarGrafico_();
+  cargarYPintarEvolucion_(info.ticker);  // ← NUEVO
+
 }
 
 function pintarSelectorRangos_() {
@@ -425,4 +440,128 @@ export function inicializarDetalle({ screener, precios }) {
   document.addEventListener('abrir-detalle-ticker', (e) => {
     abrirDetalle(e.detail.ticker);
   });
+}
+
+let chartEvolucion = null;
+
+async function cargarYPintarEvolucion_(ticker) {
+  const card = document.getElementById('card-evolucion-ranking');
+  if (!card) return;
+
+  try {
+    const datos = await cargarEvolucionTicker(ticker);
+
+    if (!datos || datos.length < 2) {
+      card.querySelector('.evolucion-header span').textContent =
+        'Sin historial suficiente (se acumula con el uso diario)';
+      return;
+    }
+
+    // Estadísticas rápidas
+    const ranks       = datos.map(d => d.rank).filter(r => r !== null);
+    const scores      = datos.map(d => d.score_FINAL_adj).filter(s => s !== null);
+    const rankMin     = Math.min(...ranks);
+    const rankMax     = Math.max(...ranks);
+    const scoreActual = scores[scores.length - 1];
+    const scoreInicio = scores[0];
+    const deltaScore  = scoreActual - scoreInicio;
+
+    card.querySelector('.evolucion-header').innerHTML = `
+      <h4>Evolución histórica del ranking</h4>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="evolucion-stat">
+          <strong>#${rankMin}</strong> Mejor rank
+        </div>
+        <div class="evolucion-stat">
+          <strong>#${rankMax}</strong> Peor rank
+        </div>
+        <div class="evolucion-stat">
+          <strong style="color:${deltaScore >= 0 ? 'var(--verde)' : 'var(--rojo)'}">
+            ${deltaScore >= 0 ? '+' : ''}${deltaScore.toFixed(2)}
+          </strong> Score vs inicio
+        </div>
+        <div class="evolucion-stat">
+          <strong>${datos.length}</strong> días en historial
+        </div>
+      </div>
+    `;
+
+    if (chartEvolucion) { chartEvolucion.destroy(); chartEvolucion = null; }
+
+    chartEvolucion = new Chart(
+      document.getElementById('grafico-evolucion-ranking'),
+      {
+        type: 'line',
+        data: {
+          labels: datos.map(d => d.snapshot_date),
+          datasets: [
+            {
+              label: 'Rank (eje izq.)',
+              data: datos.map(d => d.rank),
+              borderColor: '#E6483D',
+              backgroundColor: 'rgba(230,72,61,0.05)',
+              fill: false,
+              tension: 0.3,
+              pointRadius: 3,
+              yAxisID: 'yRank'
+            },
+            {
+              label: 'Score /10 (eje der.)',
+              data: datos.map(d => d.score_FINAL_adj),
+              borderColor: '#2649B2',
+              backgroundColor: 'rgba(38,73,178,0.08)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 3,
+              yAxisID: 'yScore'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => ctx.datasetIndex === 0
+                  ? `Rank: #${ctx.raw}`
+                  : `Score: ${Number(ctx.raw).toFixed(2)}/10`
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: datos.length > 90 ? 'month' : 'week',
+                tooltipFormat: 'dd MMM yyyy',
+                displayFormats: { week: 'dd MMM', month: 'MMM yyyy' }
+              },
+              ticks: { maxTicksLimit: 6 },
+              grid: { display: false }
+            },
+            yRank: {
+              type: 'linear',
+              position: 'left',
+              reverse: true,       // rank 1 arriba, números altos abajo
+              title: { display: true, text: 'Ranking', font: { size: 11 } },
+              ticks: { callback: v => '#' + v }
+            },
+            yScore: {
+              type: 'linear',
+              position: 'right',
+              min: 0, max: 10,
+              title: { display: true, text: 'Score', font: { size: 11 } },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      }
+    );
+
+  } catch (err) {
+    card.querySelector('.evolucion-header span').textContent = 'Error cargando historial';
+    console.warn('Error evolucion ticker:', err);
+  }
 }
