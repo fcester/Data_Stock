@@ -1032,3 +1032,11 @@ body {
 .rank-delta-baja  { color: var(--rojo);   background: rgba(230,72,61,0.12);  }
 .rank-delta-igual { color: var(--texto-secundario); background: var(--fondo); }
 
+/* Rentabilidad histórica en screener (modo comparación) */
+.retorno-historico {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
