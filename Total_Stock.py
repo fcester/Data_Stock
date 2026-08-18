@@ -18,8 +18,11 @@ tickers = pd.read_csv("Tickers.csv")["ticker"].dropna().tolist()
 PRICES_FILE     = "Actual_Stock.parquet"
 HISTORICAL_FILE = "stock_fundamentals_history.parquet"
 TICKERS_FILE    = "Tickers.csv"
-MAX_WORKERS     = 10
+MAX_WORKERS     = 4          # bajado de 10 a 4 para no saturar a Yahoo Finance
 MAX_RETRIES     = 2
+REQUEST_DELAY   = 0.3        # pausa base entre requests (segundos), throttle anti rate-limit
+CIRCUIT_BREAKER_ERRORES_401 = 15   # si vemos esto seguido, es bloqueo de Yahoo, no tickers rotos
+
 MICROCAP_THRESHOLD = 300_000_000
 
 # ---- NUEVO: archivo separado, no toca nada de lo que ya usa Power BI ----
@@ -165,9 +168,11 @@ except Exception as e:
 # ─────────────────────────────────────────────
 # 4. FUNDAMENTALES — DESCARGA PARALELA CON RETRY (misma mecánica que ya tenían)
 # ─────────────────────────────────────────────
+
 def fetch_ticker_info(t, retries=MAX_RETRIES):
     for attempt in range(retries + 1):
         try:
+            time.sleep(REQUEST_DELAY)  # throttle basico, evita saturar a Yahoo
             info = yf.Ticker(t).info
             if info and (info.get("regularMarketPrice") is not None
                          or info.get("trailingPE") is not None):
@@ -175,17 +180,23 @@ def fetch_ticker_info(t, retries=MAX_RETRIES):
             return t, info, "empty_response"
         except Exception as e:
             if attempt < retries:
-                time.sleep(1 * (attempt + 1))
+                # backoff mas agresivo si detectamos señales de rate-limit/bloqueo
+                es_bloqueo = "401" in str(e) or "429" in str(e) or "Invalid Crumb" in str(e)
+                espera = (5 if es_bloqueo else 1) * (attempt + 1)
+                time.sleep(espera)
                 continue
             return t, None, str(e)
 
+
 print(f"\n🔄 Descargando fundamentales ({len(tickers)} tickers, {MAX_WORKERS} hilos)...")
+
 
 data          = {}
 info_completo = {}   # se guarda el dict info COMPLETO para reusarlo en KPIs avanzados
                       # sin generar ni un solo request HTTP adicional
 new_hist_rows = []
 failed        = []
+failed_con_error = []   # guarda (ticker, motivo) — util para cuando reactivemos la cuarentena
 fetch_date    = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
 
 if os.path.exists(HISTORICAL_FILE):
@@ -195,13 +206,36 @@ else:
     df_hist       = pd.DataFrame()
     existing_keys = set()
 
+
+circuito_abierto     = False
+contador_401         = 0
+
 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
     futures = {executor.submit(fetch_ticker_info, t): t for t in tickers}
     for i, future in enumerate(as_completed(futures), 1):
+
+        if circuito_abierto:
+            # la sesion ya se detecto como bloqueada: no seguimos marcando tickers buenos como fallidos
+            t_pendiente = futures[future]
+            failed.append(t_pendiente)
+            failed_con_error.append((t_pendiente, "circuito_abierto_401"))
+            continue
+
         t, info, error = future.result()
+
+        if error and ("401" in str(error) or "Invalid Crumb" in str(error) or "429" in str(error)):
+            contador_401 += 1
+            if contador_401 >= CIRCUIT_BREAKER_ERRORES_401:
+                circuito_abierto = True
+                print(f"\n🚨 CIRCUITO ABIERTO: {contador_401} errores 401/429 seguidos.")
+                print("   Yahoo Finance esta bloqueando la sesion (rate-limit), no son tickers rotos.")
+                print("   Se abortan los reintentos restantes de esta ejecucion.")
+        else:
+            contador_401 = 0
 
         if error or info is None:
             failed.append(t)
+            failed_con_error.append((t, error or "info_vacio_o_none"))
             continue
 
         data[t]          = {a: info.get(a) for a in ATTRIBUTES}
@@ -222,20 +256,37 @@ with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             print(f"   {i}/{len(tickers)} tickers procesados...")
 
 print(f"   ✅ {len(data)} OK | ⚠  {len(failed)} fallidos")
+if circuito_abierto:
+    print(f"   🚨 Circuito abierto durante esta ejecucion — parte de los 'fallidos' "
+          f"son por bloqueo de Yahoo, no datos rotos.")
 
 # ─────────────────────────────────────────────
 # 5. ELIMINAR TICKERS FALLIDOS DE Tickers.csv (sin cambios)
 # ─────────────────────────────────────────────
+# ⚠ BORRADO AUTOMATICO DESACTIVADO TEMPORALMENTE (18-ago-2026)
+# Motivo: un fallo puntual (ej. rate-limit/401 de Yahoo) NO debe borrar
+# tickers reales de Tickers.csv. Pendiente: implementar cuarentena con
+# Tickers_Fallos.csv (contador de fallos consecutivos + circuit breaker
+# ya aplicado arriba en el paso 4). Hasta entonces, solo se informa.
+# ─────────────────────────────────────────────
 if failed:
-    print(f"\n🗑  Eliminando {len(failed)} tickers fallidos de {TICKERS_FILE}...")
-    print(f"   Eliminados: {failed}")
-    df_tickers_original = pd.read_csv(TICKERS_FILE)
-    df_tickers_clean    = df_tickers_original[
-        ~df_tickers_original["ticker"].isin(failed)
-    ]
-    df_tickers_clean.to_csv(TICKERS_FILE, index=False)
-    print(f"   ✅ {TICKERS_FILE} actualizado: "
-          f"{len(df_tickers_original)} → {len(df_tickers_clean)} tickers")
+    print(f"\n⚠  {len(failed)} tickers fallaron en esta ejecucion (NO se eliminan, borrado desactivado):")
+    print(f"   {failed}")
+    if circuito_abierto:
+        print("   Motivo probable: bloqueo/rate-limit de Yahoo Finance (circuito abierto), no datos rotos.")
+
+# --- CODIGO ORIGINAL, DESACTIVADO A PROPOSITO. Reactivar cuando este lista la cuarentena ---
+# if failed:
+#     print(f"\n🗑  Eliminando {len(failed)} tickers fallidos de {TICKERS_FILE}...")
+#     print(f"   Eliminados: {failed}")
+#     df_tickers_original = pd.read_csv(TICKERS_FILE)
+#     df_tickers_clean    = df_tickers_original[
+#         ~df_tickers_original["ticker"].isin(failed)
+#     ]
+#     df_tickers_clean.to_csv(TICKERS_FILE, index=False)
+#     print(f"   ✅ {TICKERS_FILE} actualizado: "
+#           f"{len(df_tickers_original)} → {len(df_tickers_clean)} tickers")
+
 
 # ─────────────────────────────────────────────
 # 6. GUARDAR HISTÓRICO DE FUNDAMENTALES (sin cambios)
