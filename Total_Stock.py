@@ -291,14 +291,30 @@ if failed:
 # ─────────────────────────────────────────────
 # 6. GUARDAR HISTÓRICO DE FUNDAMENTALES (sin cambios)
 # ─────────────────────────────────────────────
+
 if new_hist_rows:
     df_new = pd.DataFrame(new_hist_rows)
+
+    # Saneamiento defensivo del lado NUEVO (por si yfinance trajo "Infinity")
+    for _col in HISTORICAL_ATTRIBUTES:
+        if _col != "mostRecentQuarter" and _col in df_new.columns and _col not in ["ticker", "shortName", "sector", "industry"]:
+            df_new[_col] = to_numeric_safe(df_new[_col])
+
+    # Saneamiento defensivo del lado VIEJO (el parquet ya en disco puede tener
+    # "Infinity" persistido de ejecuciones anteriores al fix)
+    if not df_hist.empty:
+        _cols_no_numericas_hist = ["ticker", "report_date", "fetch_date", "shortName", "sector", "industry"]
+        for _col in df_hist.columns:
+            if _col not in _cols_no_numericas_hist:
+                df_hist[_col] = to_numeric_safe(df_hist[_col])
+
     if df_hist.empty:
         df_updated = df_new
     else:
         df_updated = pd.concat([df_hist, df_new], ignore_index=True)
     df_updated = df_updated.sort_values(["ticker", "report_date"]).reset_index(drop=True)
     df_updated.to_parquet(HISTORICAL_FILE, index=False)
+
     print(f"\n📚 Histórico actualizado: +{len(new_hist_rows)} registros | "
           f"{df_updated['ticker'].nunique()} tickers | "
           f"{len(df_updated)} filas totales")
