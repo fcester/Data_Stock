@@ -67,6 +67,22 @@ ADVANCED_ATTRIBUTES = [
 # ─────────────────────────────────────────────
 # 2. FUNCIONES PARQUET (sin cambios respecto al script original)
 # ─────────────────────────────────────────────
+
+def to_numeric_safe(series):
+    """
+    Convierte una columna a numerico de forma robusta:
+    reemplaza los strings 'Infinity' / '-Infinity' / 'NaN' que a veces
+    devuelve yfinance en vez de floats, y convierte inf/-inf resultantes
+    a NaN para que no rompan pyarrow ni el ranking por percentil.
+    """
+    s = series.replace(
+        {"Infinity": np.inf, "-Infinity": -np.inf, "NaN": np.nan}
+    )
+    s = pd.to_numeric(s, errors="coerce")
+    s = s.replace([np.inf, -np.inf], np.nan)
+    return s
+
+
 def save_parquet_pbi(df_wide, filepath):
     df_long = (
         df_wide.reset_index()
@@ -248,7 +264,7 @@ STR_COLS = ["ticker", "shortName", "sector", "industry"]
 
 for col in df.columns:
     if col not in STR_COLS:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+                 df[col] = to_numeric_safe(df[col])
 
 # ─────────────────────────────────────────────
 # 8. FEATURES DE PRECIO Y TÉCNICOS (sin cambios)
@@ -342,8 +358,12 @@ all_trend_kpis.append("earnings_consistency")
 if os.path.exists(HISTORICAL_FILE):
     df_fund_hist = pd.read_parquet(HISTORICAL_FILE)
     df_fund_hist["report_date"] = pd.to_datetime(df_fund_hist["report_date"])
+    for _col, _ in HIST_METRICS:
+        if _col in df_fund_hist.columns:
+            df_fund_hist[_col] = to_numeric_safe(df_fund_hist[_col])
     df_fund_hist = df_fund_hist.sort_values(["ticker", "report_date"])
     df_fund_hist = df_fund_hist.groupby("ticker").tail(8)   # últimos 8 trimestres
+
 
     trend_results = {}
     for ticker, group in df_fund_hist.groupby("ticker"):
@@ -591,14 +611,25 @@ SCREENER_HISTORY_FILE = "Stock_Screener_History.parquet"
 df_snapshot                  = df[output_cols].copy()
 df_snapshot["snapshot_date"] = fetch_date
 
+
 if os.path.exists(SCREENER_HISTORY_FILE):
     df_hist_screener = pd.read_parquet(SCREENER_HISTORY_FILE)
     df_hist_screener = df_hist_screener[
         df_hist_screener["snapshot_date"] != fetch_date
     ]
+
+    # Saneamiento defensivo: por si el parquet historico quedo
+    # contaminado con strings tipo "Infinity" de ejecuciones previas
+    _cols_no_numericas = ["ticker", "shortName", "sector", "industry",
+                           "rating", "snapshot_date", "liquidity_flag"]
+    for _col in df_hist_screener.columns:
+        if _col not in _cols_no_numericas:
+            df_hist_screener[_col] = to_numeric_safe(df_hist_screener[_col])
+
     df_hist_screener = pd.concat(
         [df_hist_screener, df_snapshot], ignore_index=True
     )
+
 else:
     df_hist_screener = df_snapshot
 
@@ -980,7 +1011,8 @@ df_avanzado = pd.DataFrame(filas_avanzadas)
 STR_COLS_AVANZADO = ["ticker", "recommendationKey"]
 for col in df_avanzado.columns:
     if col not in STR_COLS_AVANZADO:
-        df_avanzado[col] = pd.to_numeric(df_avanzado[col], errors="coerce")
+        df_avanzado[col] = to_numeric_safe(df_avanzado[col])
+
 
 df_avanzado.to_parquet(ADVANCED_METRICS_FILE, index=False)
 
