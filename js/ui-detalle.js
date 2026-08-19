@@ -20,15 +20,18 @@ const RANGOS = [
   { key: 'MAX', label: 'Máx' },
 ];
 
+
 const EXPLICACION_CATEGORIAS = {
   valuation: 'Compara PE, PB y EV/EBITDA contra el sector. Menor valuación relativa = mejor score.',
+  deep_value: 'Margen de seguridad de Graham, FCF Yield y percentil de PE vs la propia historia del ticker (no solo vs sector). Busca oportunidades antes de que el mercado las note.',
   profitability: 'Mide ROE, margen neto y margen operativo frente a pares del sector.',
   growth: 'Evalúa crecimiento de ingresos y de ganancias interanual.',
   financial: 'Mide solidez financiera: deuda/patrimonio y liquidez corriente.',
-  momentum: 'Compara el precio actual contra sus promedios móviles de 50/200 días y su posición en el rango de 52 semanas.',
+  momentum_calidad: 'Compara el precio vs su media de 200 días y penaliza los extremos de RSI (sobrecompra/sobreventa), en vez de solo premiar que el precio esté cerca de máximos.',
   fundamental_momentum: 'Analiza tendencia, consistencia (R²), CAGR y aceleración de ingresos, EBITDA, márgenes, deuda y FCF de los últimos 8 trimestres.',
   income: 'Evalúa el dividendo entregado frente al sector, más el historial de crecimiento de dividendos.'
 };
+
 
 function calcularRetornosDiarios_(precios) {
   const retornos = [];
@@ -144,15 +147,18 @@ function pintarDetalle_(ticker) {
     faltan datos (completitud: ${info.data_completeness ?? 'N/D'}%) o si es microcap.
   `;
 
+
   const categorias = [
     ['valuation', 'Valuation', info.score_valuation],
+    ['deep_value', 'Deep Value', info.score_deep_value],
     ['profitability', 'Profitability', info.score_profitability],
     ['growth', 'Growth', info.score_growth],
     ['financial', 'Financial Health', info.score_financial],
-    ['momentum', 'Price Momentum', info.score_momentum],
+    ['momentum_calidad', 'Momentum Calidad', info.score_momentum_calidad],
     ['fundamental_momentum', 'Fundamental Momentum', info.score_fundamental_momentum],
     ['income', 'Income', info.score_income]
   ];
+
 
   const similares = cacheScreenerCompleto
     .filter(r => r.ticker !== info.ticker && r.sector === info.sector && r.industry === info.industry && r.score_FINAL_adj !== null)
