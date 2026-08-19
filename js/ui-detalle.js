@@ -125,6 +125,50 @@ function renderKpiAvanzado_(label, valor, sufijo = '', tooltip = null) {
   return `<div class="kpi-card"><div class="kpi-valor">${valorTexto}</div><div class="kpi-label">${labelHtml}</div></div>`;
 }
 
+// Traduce señal_tendencia (calculada en Python, cruce MA10/MA40 semanal) a un
+// badge visual con color e icono. NO afecta el score, es informativo/confirmatorio.
+function renderBadgeTendenciaSemanal_(info) {
+  const señal = info.señal_tendencia;
+  if (!señal || señal === 'Sin datos de precio' || señal === 'Historial insuficiente') {
+    return `<div class="banner-historico" style="margin-bottom:14px">
+      📊 ${señal === 'Historial insuficiente'
+        ? 'Tendencia semanal: historial de precios insuficiente todavía (se acumula con el tiempo).'
+        : 'Tendencia semanal: sin datos de precio disponibles.'}
+    </div>`;
+  }
+
+  const configPorSeñal = {
+    'Golden Cross reciente':        { color: 'var(--verde)',  bg: 'rgba(31,174,104,0.12)', icono: '🚀' },
+    'Tendencia alcista establecida': { color: 'var(--verde)',  bg: 'rgba(31,174,104,0.08)', icono: '↑' },
+    'Death Cross reciente':          { color: 'var(--rojo)',   bg: 'rgba(230,72,61,0.12)',  icono: '⚠' },
+    'Tendencia bajista establecida': { color: 'var(--rojo)',   bg: 'rgba(230,72,61,0.08)',  icono: '↓' },
+  };
+  const cfg = configPorSeñal[señal] || { color: 'var(--texto-secundario)', bg: 'var(--fondo)', icono: '–' };
+
+  const semanas = info.tendencia_semanal_alcista
+    ? info.semanas_desde_golden_cross
+    : info.semanas_desde_death_cross;
+  const detalleSemanas = (semanas !== null && semanas !== undefined && !Number.isNaN(semanas))
+    ? ` · hace ${semanas} semana${semanas === 1 ? '' : 's'}`
+    : '';
+
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
+                background:${cfg.bg};border-radius:12px;margin-bottom:14px;
+                border-left:4px solid ${cfg.color}">
+      <span style="font-size:1.3rem">${cfg.icono}</span>
+      <div>
+        <div style="font-weight:700;color:${cfg.color}">${escapeHtml(señal)}${detalleSemanas}</div>
+        <div style="font-size:0.75rem;color:var(--texto-secundario)">
+          Cruce de medias móviles semanales (MA10 vs MA40) — señal de confirmación de tendencia,
+          no de anticipación. Complementa al score, no lo modifica.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+
 function pintarDetalle_(ticker) {
   const info = cacheScreenerCompleto.find(r => (r.ticker || '').toUpperCase() === ticker.toUpperCase());
   const contenido = document.getElementById('panel-detalle-contenido');
@@ -279,12 +323,14 @@ function pintarDetalle_(ticker) {
 
     <div class="card">
       <h4>Momentum y señales técnicas</h4>
+      ${renderBadgeTendenciaSemanal_(info)}
       <div class="kpis-grid-compacta">
         ${renderKpiAvanzado_('RSI 14 días', info.rsi_14, '', 'Relative Strength Index. > 70 = sobrecomprado · < 30 = sobrevendido · 30-70 = zona neutral.')}
         ${renderKpiAvanzado_('Momentum 1M', info.momentum_1m !== null && info.momentum_1m !== undefined ? info.momentum_1m * 100 : null, '%', 'Retorno del precio en el último mes (~21 días hábiles).')}
         ${renderKpiAvanzado_('Momentum 3M', info.momentum_3m !== null && info.momentum_3m !== undefined ? info.momentum_3m * 100 : null, '%', 'Retorno del precio en los últimos 3 meses (~63 días hábiles).')}
         ${renderKpiAvanzado_('Momentum 6M', info.momentum_6m !== null && info.momentum_6m !== undefined ? info.momentum_6m * 100 : null, '%', 'Retorno del precio en los últimos 6 meses (~126 días hábiles).')}
       </div>
+
       ${info.rsi_14 !== null && info.rsi_14 !== undefined ? `
         <div style="margin-top:16px">
           <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--texto-secundario);margin-bottom:6px">
