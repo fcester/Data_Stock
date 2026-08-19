@@ -1394,11 +1394,32 @@ print(f"   Dividend growth streak disponible para "
       f"{(df_avanzado['dividend_growth_streak'] > 0).sum()} tickers")
 
 # ─────────────────────────────────────────────
+# VALIDACION DEFENSIVA: evita que un CONFIG renombrado rompa el resumen final
+# despues de que todo el trabajo pesado (11+ min) ya se hizo y los archivos
+# ya se guardaron. Si falta una columna esperada, avisa pero NO frena el pipeline.
+# ─────────────────────────────────────────────
+columnas_top15_deseadas = [
+    "rank", "ticker", "shortName", "score_FINAL_adj",
+    "rating", "data_completeness",
+    "score_valuation", "score_deep_value", "score_profitability",
+    "score_momentum_calidad", "score_fundamental_momentum"
+]
+columnas_disponibles = [c for c in columnas_top15_deseadas if c in df.columns]
+columnas_faltantes   = [c for c in columnas_top15_deseadas if c not in df.columns]
+
+if columnas_faltantes:
+    print(f"\n⚠  Columnas no encontradas para el resumen Top 15 (no critico, "
+          f"los archivos YA se guardaron correctamente): {columnas_faltantes}")
+
+top15 = df.sort_values("rank")[columnas_disponibles].head(15)
+
+# ─────────────────────────────────────────────
 # 20. RESUMEN CONSOLA (screener original, sin cambios)
 # ─────────────────────────────────────────────
 print("\n" + "="*60)
 print("🏆 TOP 15 — RANKING FINAL")
 print("="*60)
+
 
 top15 = df.sort_values("rank")[
     ["rank", "ticker", "shortName", "score_FINAL_adj",
@@ -1406,6 +1427,7 @@ top15 = df.sort_values("rank")[
      "score_valuation", "score_deep_value", "score_profitability",
      "score_momentum_calidad", "score_fundamental_momentum"]
 ].head(15)
+
 
 print(top15.to_string(index=False))
 
