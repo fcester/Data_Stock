@@ -9,6 +9,7 @@ import { escapeHtml, claseBadge } from './ui-common.js';
 let cacheScreener       = [];
 let cacheTendencia      = {};   // { sector: avg_score_ref }
 let modoVista           = 'sectores';   // 'sectores' | 'industrias'
+let cacheTrendsPython   = [];   // datos de Sector_Industry_Trends.parquet (beta/PE/dividendo reales por grupo)
 let filtroTendencia     = 'todos';
 let ordenActual         = 'score';
 let busquedaActual      = '';
@@ -16,13 +17,16 @@ let sectorDrilldown     = null;   // null = vista general, 'Technology' = drill-
 let chartSectores       = null;
 
 // ── Entry point ──────────────────────────────────────────────────────────
-export function inicializarMercado({ screener, tendenciaSectores }) {
-  cacheScreener = screener || [];
+
+export function inicializarMercado({ screener, tendenciaSectores, tendenciaGruposCompleta }) {
+  cacheScreener     = screener || [];
+  cacheTrendsPython = tendenciaGruposCompleta || [];
 
   // Construir mapa de tendencia: { sector → avg_score_ref }
   (tendenciaSectores || []).forEach(r => {
     if (r.sector) cacheTendencia[r.sector] = r.avg_score_ref;
   });
+
 
   // ── Listeners (defensivos) ──────────────────────────────────────────
   document.getElementById('tab-sectores')?.addEventListener('click', () => {
