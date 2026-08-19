@@ -814,6 +814,122 @@ print(f"📅 Stock_Screener_History.parquet actualizado: "
       f"{df_hist_screener['snapshot_date'].min()} → "
       f"{df_hist_screener['snapshot_date'].max()}")
 
+
+# ═══════════════════════════════════════════════════════════
+# 17C. NUEVO BLOQUE — TENDENCIAS DE SECTOR/INDUSTRIA (archivo separado)
+#     Calcula al nivel mas bajo (industry) y agrega hacia arriba (sector)
+#     mediante promedio ponderado, para que ambas vistas sean consistentes.
+#     No modifica ningun archivo existente.
+# ═══════════════════════════════════════════════════════════
+print("\n" + "="*60)
+print("🏭 CALCULANDO TENDENCIAS DE SECTOR/INDUSTRIA (archivo nuevo)")
+print("="*60)
+
+SECTOR_INDUSTRY_HISTORY_FILE = "Sector_Industry_Trends.parquet"
+MIN_TICKERS_POR_GRUPO = 2   # no calcular promedios sobre grupos con 1 solo ticker (poco representativo)
+
+def calcular_metricas_industria(df_fuente):
+    """
+    Calcula metricas agregadas a nivel INDUSTRIA (nivel mas bajo de jerarquia).
+    Se excluyen aqui los grupos con muy pocos tickers para no dar una falsa
+    sensacion de robustez estadistica sobre un promedio de 1-2 empresas.
+    """
+    df_valido = df_fuente.dropna(subset=["sector", "industry"]).copy()
+
+    agg = df_valido.groupby(["sector", "industry"]).agg(
+        n_tickers            = ("ticker", "count"),
+        beta_avg             = ("beta", "mean"),
+        beta_median          = ("beta", "median"),
+        pe_avg               = ("trailingPE", "mean"),
+        pe_median            = ("trailingPE", "median"),
+        forward_pe_avg       = ("forwardPE", "mean"),
+        dividend_yield_avg   = ("dividendYield", "mean"),
+        roe_avg              = ("returnOnEquity", "mean"),
+        debt_to_equity_avg   = ("debtToEquity", "mean"),
+        score_final_avg      = ("score_FINAL_adj", "mean"),
+        score_final_median   = ("score_FINAL_adj", "median"),
+        score_valuation_avg  = ("score_valuation", "mean"),
+        score_momentum_avg   = ("score_momentum_calidad", "mean"),
+        score_deep_value_avg = ("score_deep_value", "mean"),
+        rank_avg             = ("rank", "mean"),
+        market_cap_total     = ("marketCap", "sum"),
+    ).reset_index()
+
+    agg = agg[agg["n_tickers"] >= MIN_TICKERS_POR_GRUPO].copy()
+    agg["nivel"] = "industry"
+    agg["grupo"] = agg["industry"]
+    return agg
+
+def calcular_metricas_sector(df_industria):
+    """
+    Agrega el nivel SECTOR a partir del nivel INDUSTRIA ya calculado,
+    usando promedio ponderado por n_tickers de cada industria.
+    Garantiza consistencia: sector = agregado de sus industrias, nunca
+    un calculo independiente sobre los tickers sueltos.
+    """
+    cols_a_ponderar = [
+        "beta_avg", "beta_median", "pe_avg", "pe_median", "forward_pe_avg",
+        "dividend_yield_avg", "roe_avg", "debt_to_equity_avg",
+        "score_final_avg", "score_final_median", "score_valuation_avg",
+        "score_momentum_avg", "score_deep_value_avg", "rank_avg",
+    ]
+
+    filas_sector = []
+    for sector, sub in df_industria.groupby("sector"):
+        n_total = sub["n_tickers"].sum()
+        fila = {"sector": sector, "industry": np.nan, "n_tickers": n_total}
+        for col in cols_a_ponderar:
+            valores_validos = sub.dropna(subset=[col])
+            if valores_validos.empty or valores_validos["n_tickers"].sum() == 0:
+                fila[col] = np.nan
+            else:
+                fila[col] = (
+                    (valores_validos[col] * valores_validos["n_tickers"]).sum()
+                    / valores_validos["n_tickers"].sum()
+                )
+        fila["market_cap_total"] = sub["market_cap_total"].sum()
+        filas_sector.append(fila)
+
+    df_sector = pd.DataFrame(filas_sector)
+    df_sector["nivel"] = "sector"
+    df_sector["grupo"] = df_sector["sector"]
+    return df_sector
+
+# ── Calculo del snapshot de HOY ──
+df_industria_hoy = calcular_metricas_industria(df)
+df_sector_hoy    = calcular_metricas_sector(df_industria_hoy)
+
+columnas_finales = [
+    "sector", "industry", "nivel", "grupo", "n_tickers",
+    "beta_avg", "beta_median", "pe_avg", "pe_median", "forward_pe_avg",
+    "dividend_yield_avg", "roe_avg", "debt_to_equity_avg",
+    "score_final_avg", "score_final_median", "score_valuation_avg",
+    "score_momentum_avg", "score_deep_value_avg", "rank_avg", "market_cap_total",
+]
+
+df_snapshot_grupos = pd.concat(
+    [df_industria_hoy[columnas_finales], df_sector_hoy[columnas_finales]],
+    ignore_index=True
+)
+df_snapshot_grupos["snapshot_date"] = fetch_date
+
+# ── Append al historico, con el mismo patron dedupe-por-fecha que ya usas en 17B ──
+if os.path.exists(SECTOR_INDUSTRY_HISTORY_FILE):
+    df_hist_grupos = pd.read_parquet(SECTOR_INDUSTRY_HISTORY_FILE)
+    df_hist_grupos = df_hist_grupos[df_hist_grupos["snapshot_date"] != fetch_date]
+    df_hist_grupos = pd.concat([df_hist_grupos, df_snapshot_grupos], ignore_index=True)
+else:
+    df_hist_grupos = df_snapshot_grupos
+
+df_hist_grupos = df_hist_grupos.sort_values(["snapshot_date", "nivel", "sector", "industry"]).reset_index(drop=True)
+df_hist_grupos.to_parquet(SECTOR_INDUSTRY_HISTORY_FILE, index=False)
+
+n_industrias_hoy = (df_snapshot_grupos["nivel"] == "industry").sum()
+n_sectores_hoy   = (df_snapshot_grupos["nivel"] == "sector").sum()
+print(f"✅ {SECTOR_INDUSTRY_HISTORY_FILE} actualizado:")
+print(f"   {n_industrias_hoy} industrias | {n_sectores_hoy} sectores | snapshot {fetch_date}")
+print(f"   {df_hist_grupos['snapshot_date'].nunique()} fechas historicas en total")
+
 # ─────────────────────────────────────────────
 # 18. APPEND DIARIO → Actual_Stock.parquet (sin cambios)
 # ─────────────────────────────────────────────
@@ -872,6 +988,81 @@ else:
 print(f"💾 Parquet guardado: {len(df_long):,} filas | "
       f"{df_long['Ticker'].nunique()} tickers | "
       f"{df_long['Date'].min()} → {df_long['Date'].max()}")
+
+# ═══════════════════════════════════════════════════════════
+# 18B. NUEVO BLOQUE — TENDENCIA SEMANAL (cruce de medias moviles)
+#     Usa el HISTORICO COMPLETO ya guardado en Actual_Stock.parquet
+#     (no los 6 meses de 'prices'), porque necesitamos ~45 semanas
+#     minimo para una MA40 semanal confiable.
+# ═══════════════════════════════════════════════════════════
+print("\n📐 Calculando tendencia semanal (cruce de medias moviles)...")
+
+MA_CORTA_SEMANAL       = 10
+MA_LARGA_SEMANAL       = 40
+MIN_SEMANAS_REQUERIDAS = MA_LARGA_SEMANAL + 5
+
+precios_historico_completo = read_parquet_prices(PRICES_FILE)   # reusa tu funcion ya existente
+
+tendencia_semanal_dict = {}
+
+for t in data.keys():   # solo tickers con descarga exitosa hoy
+    if t not in precios_historico_completo.columns:
+        tendencia_semanal_dict[t] = {
+            "tendencia_semanal_alcista": np.nan,
+            "semanas_desde_golden_cross": np.nan,
+            "semanas_desde_death_cross": np.nan,
+            "señal_tendencia": "Sin datos de precio",
+        }
+        continue
+
+    serie_diaria_t  = precios_historico_completo[t].dropna()
+    serie_semanal_t = serie_diaria_t.resample("W").last().dropna()
+
+    if len(serie_semanal_t) < MIN_SEMANAS_REQUERIDAS:
+        tendencia_semanal_dict[t] = {
+            "tendencia_semanal_alcista": np.nan,
+            "semanas_desde_golden_cross": np.nan,
+            "semanas_desde_death_cross": np.nan,
+            "señal_tendencia": "Historial insuficiente",
+        }
+        continue
+
+    ma_corta_sem   = serie_semanal_t.rolling(MA_CORTA_SEMANAL).mean()
+    ma_larga_sem   = serie_semanal_t.rolling(MA_LARGA_SEMANAL).mean()
+    diferencia_sem = ma_corta_sem - ma_larga_sem
+
+    cruce_alcista = (diferencia_sem > 0) & (diferencia_sem.shift(1) <= 0)
+    cruce_bajista = (diferencia_sem < 0) & (diferencia_sem.shift(1) >= 0)
+
+    alcista_hoy = bool(ma_corta_sem.iloc[-1] > ma_larga_sem.iloc[-1])
+
+    fechas_cruce_alcista = serie_semanal_t.index[cruce_alcista.fillna(False)]
+    fechas_cruce_bajista = serie_semanal_t.index[cruce_bajista.fillna(False)]
+
+    semanas_desde_golden = (
+        int((serie_semanal_t.index[-1] - fechas_cruce_alcista[-1]).days / 7)
+        if len(fechas_cruce_alcista) > 0 else np.nan
+    )
+    semanas_desde_death = (
+        int((serie_semanal_t.index[-1] - fechas_cruce_bajista[-1]).days / 7)
+        if len(fechas_cruce_bajista) > 0 else np.nan
+    )
+
+    if alcista_hoy:
+        señal = "Golden Cross reciente" if (pd.notna(semanas_desde_golden) and semanas_desde_golden <= 4) else "Tendencia alcista establecida"
+    else:
+        señal = "Death Cross reciente" if (pd.notna(semanas_desde_death) and semanas_desde_death <= 4) else "Tendencia bajista establecida"
+
+    tendencia_semanal_dict[t] = {
+        "tendencia_semanal_alcista": alcista_hoy,
+        "semanas_desde_golden_cross": semanas_desde_golden,
+        "semanas_desde_death_cross": semanas_desde_death,
+        "señal_tendencia": señal,
+    }
+
+n_con_señal = sum(1 for v in tendencia_semanal_dict.values() if v["señal_tendencia"] != "Historial insuficiente" and v["señal_tendencia"] != "Sin datos de precio")
+print(f"   ✅ Tendencia semanal calculada para {n_con_señal}/{len(tendencia_semanal_dict)} tickers "
+      f"(requiere ≥{MIN_SEMANAS_REQUERIDAS} semanas de historico)")
 
 # ═══════════════════════════════════════════════════════════
 # 19. NUEVO BLOQUE — KPIs AVANZADOS (archivo separado)
@@ -1010,6 +1201,13 @@ for t in data.keys():   # solo tickers que ya tuvieron descarga exitosa en el pa
     else:
         fila["dividend_growth_streak"] = 0
         fila["dividend_growth_avg"]    = np.nan
+
+    fila.update(tendencia_semanal_dict.get(t, {
+        "tendencia_semanal_alcista": np.nan,
+        "semanas_desde_golden_cross": np.nan,
+        "semanas_desde_death_cross": np.nan,
+        "señal_tendencia": "Sin datos de precio",
+    }))
 
     filas_avanzadas.append(fila)
     
@@ -1177,7 +1375,7 @@ for t in data.keys():   # solo tickers que ya tuvieron descarga exitosa en el pa
 df_avanzado = pd.DataFrame(filas_avanzadas)
 
 # Conversión numérica explícita (mismo patrón defensivo que el resto del script)
-STR_COLS_AVANZADO = ["ticker", "recommendationKey"]
+STR_COLS_AVANZADO = ["ticker", "recommendationKey", "señal_tendencia"]
 for col in df_avanzado.columns:
     if col not in STR_COLS_AVANZADO:
         df_avanzado[col] = to_numeric_safe(df_avanzado[col])
@@ -1201,12 +1399,14 @@ print(f"   Dividend growth streak disponible para "
 print("\n" + "="*60)
 print("🏆 TOP 15 — RANKING FINAL")
 print("="*60)
+
 top15 = df.sort_values("rank")[
     ["rank", "ticker", "shortName", "score_FINAL_adj",
      "rating", "data_completeness",
-     "score_valuation", "score_profitability",
-     "score_momentum", "score_fundamental_momentum"]
+     "score_valuation", "score_deep_value", "score_profitability",
+     "score_momentum_calidad", "score_fundamental_momentum"]
 ].head(15)
+
 print(top15.to_string(index=False))
 
 print(f"\n📊 Distribución de ratings:")
