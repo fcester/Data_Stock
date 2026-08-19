@@ -6,7 +6,7 @@ import { cargarSnapshotFecha } from './data-loader.js';
 let cacheScreenerCompleto  = [];
 let cacheScreenerHistorico = [];
 let arbolSectoresCache     = {};
-let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '' };
+let filtroActivo = { sector: 'Todos', industry: 'Todas', rating: 'Todos', busqueda: '', tendenciaSemanal: 'Todos' };
 let modoHistorico          = false;
 let fechaHistoricaActual   = null;
 let cacheFechasDisponibles = [];
@@ -67,6 +67,9 @@ function aplicarFiltros_(mostrarDelta = false) {
     resultado = resultado.filter(r => r.industry === filtroActivo.industry);
   if (filtroActivo.rating   !== 'Todos')
     resultado = resultado.filter(r => r.rating   === filtroActivo.rating);
+  
+  if (filtroActivo.tendenciaSemanal !== 'Todos')
+    resultado = resultado.filter(r => r.señal_tendencia === filtroActivo.tendenciaSemanal);
   if (filtroActivo.busqueda) {
     const q = filtroActivo.busqueda.toUpperCase();
     resultado = resultado.filter(r =>
@@ -147,6 +150,12 @@ export function inicializarScreener({ screener, precios, fechasHistorial }) {
     filtroActivo.rating = e.target.value;
     aplicarFiltros_();
   });
+  
+  document.getElementById('filtro-tendencia-semanal')?.addEventListener('change', (e) => {
+    filtroActivo.tendenciaSemanal = e.target.value;
+    aplicarFiltros_();
+  });
+
   document.getElementById('buscador')?.addEventListener('input', (e) => {
     filtroActivo.busqueda = e.target.value;
     aplicarFiltros_();
