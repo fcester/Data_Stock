@@ -136,21 +136,34 @@ function renderBadgeTendenciaSemanal_(info) {
         : 'Tendencia semanal: sin datos de precio disponibles.'}
     </div>`;
   }
-
+  
   const configPorSeñal = {
-    'Golden Cross reciente':        { color: 'var(--verde)',  bg: 'rgba(31,174,104,0.12)', icono: '🚀' },
+    'Golden Cross reciente':         { color: 'var(--verde)',  bg: 'rgba(31,174,104,0.12)', icono: '🚀' },
     'Tendencia alcista establecida': { color: 'var(--verde)',  bg: 'rgba(31,174,104,0.08)', icono: '↑' },
+    'Próximo a Golden Cross':        { color: 'var(--azul-claro)', bg: 'rgba(74,116,243,0.12)', icono: '👀' },
     'Death Cross reciente':          { color: 'var(--rojo)',   bg: 'rgba(230,72,61,0.12)',  icono: '⚠' },
     'Tendencia bajista establecida': { color: 'var(--rojo)',   bg: 'rgba(230,72,61,0.08)',  icono: '↓' },
+    'Próximo a Death Cross':         { color: 'var(--amarillo)', bg: 'rgba(230,184,0,0.12)', icono: '👁' },
   };
+
   const cfg = configPorSeñal[señal] || { color: 'var(--texto-secundario)', bg: 'var(--fondo)', icono: '–' };
 
+  
+  const esProximo = señal.startsWith('Próximo a');
   const semanas = info.tendencia_semanal_alcista
     ? info.semanas_desde_golden_cross
     : info.semanas_desde_death_cross;
-  const detalleSemanas = (semanas !== null && semanas !== undefined && !Number.isNaN(semanas))
+  const detalleSemanas = (!esProximo && semanas !== null && semanas !== undefined && !Number.isNaN(semanas))
     ? ` · hace ${semanas} semana${semanas === 1 ? '' : 's'}`
     : '';
+
+  const detalleDistancia = (esProximo && info.distancia_cruce_pct !== null && info.distancia_cruce_pct !== undefined)
+    ? ` · a ${Math.abs(info.distancia_cruce_pct).toFixed(1)}% de cruzar`
+    : '';
+
+  const explicacion = esProximo
+    ? 'Las medias móviles semanales (MA10 y MA40) se están acercando y podrían cruzarse pronto. Es una señal temprana, aún no confirmada — puede revertirse antes de cruzar.'
+    : 'Cruce de medias móviles semanales (MA10 vs MA40) — señal de confirmación de tendencia, no de anticipación. Complementa al score, no lo modifica.';
 
   return `
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
@@ -158,15 +171,12 @@ function renderBadgeTendenciaSemanal_(info) {
                 border-left:4px solid ${cfg.color}">
       <span style="font-size:1.3rem">${cfg.icono}</span>
       <div>
-        <div style="font-weight:700;color:${cfg.color}">${escapeHtml(señal)}${detalleSemanas}</div>
-        <div style="font-size:0.75rem;color:var(--texto-secundario)">
-          Cruce de medias móviles semanales (MA10 vs MA40) — señal de confirmación de tendencia,
-          no de anticipación. Complementa al score, no lo modifica.
-        </div>
+        <div style="font-weight:700;color:${cfg.color}">${escapeHtml(señal)}${detalleSemanas}${detalleDistancia}</div>
+        <div style="font-size:0.75rem;color:var(--texto-secundario)">${explicacion}</div>
       </div>
     </div>
   `;
-}
+
 
 
 function pintarDetalle_(ticker) {
