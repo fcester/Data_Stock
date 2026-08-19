@@ -130,6 +130,7 @@ export async function cargarUniversoCompleto() {
       s.revenue_qoq, s.ebitda_qoq, s.revenue_accel, s.margin_accel,
       a.tendencia_semanal_alcista, a.semanas_desde_golden_cross,
       a.semanas_desde_death_cross, a.señal_tendencia,
+      a.distancia_cruce_pct, a.convergiendo_a_cruce,
       a.piotroski_score_adj, a.piotroski_tests_ok, a.piotroski_tests_total,
       a.sharpe_ratio, a.sortino_ratio, a.var_95_diario,
       a.analyst_upside, a.recommendationKey, a.recommendationMean, a.numberOfAnalystOpinions,
