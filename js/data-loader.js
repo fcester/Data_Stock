@@ -309,41 +309,57 @@ export async function cargarEvolucionTicker(ticker) {
 }
 
 
-// ── NUEVO: tendencia de sectores (score promedio hace ~30 días) ──────────
-// Usa el snapshot más antiguo disponible como referencia de tendencia.
-// Si el historial tiene menos de 30 días, compara con lo que haya.
+
+// ── ACTUALIZADO: usa Sector_Industry_Trends.parquet (ya calculado en Python
+// con jerarquia correcta industria->sector), en vez de recalcular en el navegador ──
 export async function cargarTendenciaSectores() {
-  const url = BASE_URL + 'Stock_Screener_History.parquet';
+  const url = BASE_URL + 'Sector_Industry_Trends.parquet';
   try {
     const filas = await consultarSQL(`
       SELECT
-        TRIM(CAST(sector AS VARCHAR))    AS sector,
-        AVG(score_FINAL_adj)             AS avg_score_ref,
-        MIN(snapshot_date)               AS fecha_ref
+        TRIM(CAST(sector AS VARCHAR)) AS sector,
+        score_final_avg                AS avg_score_ref,
+        snapshot_date                  AS fecha_ref
       FROM read_parquet('${url}')
-      WHERE snapshot_date = (
-        SELECT MIN(snapshot_date) FROM read_parquet('${url}')
-      )
-        AND sector IS NOT NULL
-      GROUP BY sector
+      WHERE nivel = 'sector'
+        AND snapshot_date = (
+          SELECT MIN(snapshot_date) FROM read_parquet('${url}') WHERE nivel = 'sector'
+        )
     `);
     return filas;
   } catch (e) {
-    console.warn('Sin tendencia de sectores disponible:', e.message);
+    console.warn('Sin tendencia de sectores disponible (archivo aun no generado):', e.message);
     return [];
   }
 }
 
-// ── ACTUALIZADO: incluye tendencia de sectores ───────────────────────────
+// ── NUEVO: snapshot completo mas reciente, a nivel sector E industria ──────
+// Trae ambos niveles de jerarquia para el detalle fino en ui-mercado.js
+export async function cargarTendenciaGruposCompleta() {
+  const url = BASE_URL + 'Sector_Industry_Trends.parquet';
+  try {
+    return await consultarSQL(`
+      SELECT *
+      FROM read_parquet('${url}')
+      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM read_parquet('${url}'))
+      ORDER BY nivel, sector, industry
+    `);
+  } catch (e) {
+    console.warn('Sin datos de Sector_Industry_Trends aun:', e.message);
+    return [];
+  }
+}
+
+
 export async function cargarTodosLosDatos() {
-  const [screener, precios, fundamentales, fechasHistorial, tendenciaSectores] =
+  const [screener, precios, fundamentales, fechasHistorial, tendenciaSectores, tendenciaGruposCompleta] =
     await Promise.all([
       cargarUniversoCompleto(),
       cargarParquetCompleto('Actual_Stock.parquet'),
       cargarParquetCompleto('stock_fundamentals_history.parquet'),
       cargarFechasHistorial(),
-      cargarTendenciaSectores()           // ← NUEVO
+      cargarTendenciaSectores(),
+      cargarTendenciaGruposCompleta()     // ← NUEVO: sector + industria, snapshot mas reciente
     ]);
-  return { screener, precios, fundamentales, fechasHistorial, tendenciaSectores };
+  return { screener, precios, fundamentales, fechasHistorial, tendenciaSectores, tendenciaGruposCompleta };
 }
-
