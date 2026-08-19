@@ -1006,14 +1006,18 @@ precios_historico_completo = read_parquet_prices(PRICES_FILE)   # reusa tu funci
 tendencia_semanal_dict = {}
 
 for t in data.keys():   # solo tickers con descarga exitosa hoy
+    
     if t not in precios_historico_completo.columns:
         tendencia_semanal_dict[t] = {
             "tendencia_semanal_alcista": np.nan,
             "semanas_desde_golden_cross": np.nan,
             "semanas_desde_death_cross": np.nan,
             "señal_tendencia": "Sin datos de precio",
+            "distancia_cruce_pct": np.nan,
+            "convergiendo_a_cruce": np.nan,
         }
         continue
+
 
     serie_diaria_t  = precios_historico_completo[t].dropna()
     serie_semanal_t = serie_diaria_t.resample("W").last().dropna()
@@ -1024,9 +1028,13 @@ for t in data.keys():   # solo tickers con descarga exitosa hoy
             "semanas_desde_golden_cross": np.nan,
             "semanas_desde_death_cross": np.nan,
             "señal_tendencia": "Historial insuficiente",
+            "distancia_cruce_pct": np.nan,
+            "convergiendo_a_cruce": np.nan,
         }
         continue
 
+
+    
     ma_corta_sem   = serie_semanal_t.rolling(MA_CORTA_SEMANAL).mean()
     ma_larga_sem   = serie_semanal_t.rolling(MA_LARGA_SEMANAL).mean()
     diferencia_sem = ma_corta_sem - ma_larga_sem
@@ -1035,6 +1043,28 @@ for t in data.keys():   # solo tickers con descarga exitosa hoy
     cruce_bajista = (diferencia_sem < 0) & (diferencia_sem.shift(1) >= 0)
 
     alcista_hoy = bool(ma_corta_sem.iloc[-1] > ma_larga_sem.iloc[-1])
+
+    # ── NUEVO: distancia porcentual entre las medias y si esta convergiendo ──
+    # Distancia % respecto a la MA larga (referencia estable, evita distorsion
+    # si la MA corta esta muy cerca de cero en terminos absolutos)
+    diferencia_pct_sem = (diferencia_sem / ma_larga_sem) * 100
+    distancia_actual_pct = float(diferencia_pct_sem.iloc[-1]) if pd.notna(diferencia_pct_sem.iloc[-1]) else np.nan
+
+    UMBRAL_CERCA_PCT   = 3.0   # distancia menor a esto se considera "cerca" de cruzar
+    SEMANAS_CONVERGENCIA = 4   # ventana para medir si se esta acercando o alejando
+
+    if len(diferencia_pct_sem) > SEMANAS_CONVERGENCIA and pd.notna(distancia_actual_pct):
+        distancia_hace_n_semanas = diferencia_pct_sem.iloc[-1 - SEMANAS_CONVERGENCIA]
+        if pd.notna(distancia_hace_n_semanas):
+            # Convergiendo = la distancia absoluta se esta achicando con el tiempo
+            convergiendo = abs(distancia_actual_pct) < abs(distancia_hace_n_semanas)
+        else:
+            convergiendo = False
+    else:
+        convergiendo = False
+
+    proximo_a_golden = (not alcista_hoy) and convergiendo and abs(distancia_actual_pct) < UMBRAL_CERCA_PCT
+    proximo_a_death  = alcista_hoy and convergiendo and abs(distancia_actual_pct) < UMBRAL_CERCA_PCT
 
     fechas_cruce_alcista = serie_semanal_t.index[cruce_alcista.fillna(False)]
     fechas_cruce_bajista = serie_semanal_t.index[cruce_bajista.fillna(False)]
@@ -1048,16 +1078,29 @@ for t in data.keys():   # solo tickers con descarga exitosa hoy
         if len(fechas_cruce_bajista) > 0 else np.nan
     )
 
+    
     if alcista_hoy:
-        señal = "Golden Cross reciente" if (pd.notna(semanas_desde_golden) and semanas_desde_golden <= 4) else "Tendencia alcista establecida"
+        if pd.notna(semanas_desde_golden) and semanas_desde_golden <= 4:
+            señal = "Golden Cross reciente"
+        elif proximo_a_death:
+            señal = "Próximo a Death Cross"
+        else:
+            señal = "Tendencia alcista establecida"
     else:
-        señal = "Death Cross reciente" if (pd.notna(semanas_desde_death) and semanas_desde_death <= 4) else "Tendencia bajista establecida"
+        if pd.notna(semanas_desde_death) and semanas_desde_death <= 4:
+            señal = "Death Cross reciente"
+        elif proximo_a_golden:
+            señal = "Próximo a Golden Cross"
+        else:
+            señal = "Tendencia bajista establecida"
 
     tendencia_semanal_dict[t] = {
         "tendencia_semanal_alcista": alcista_hoy,
         "semanas_desde_golden_cross": semanas_desde_golden,
         "semanas_desde_death_cross": semanas_desde_death,
         "señal_tendencia": señal,
+        "distancia_cruce_pct": round(distancia_actual_pct, 2) if pd.notna(distancia_actual_pct) else np.nan,
+        "convergiendo_a_cruce": convergiendo,
     }
 
 n_con_señal = sum(1 for v in tendencia_semanal_dict.values() if v["señal_tendencia"] != "Historial insuficiente" and v["señal_tendencia"] != "Sin datos de precio")
