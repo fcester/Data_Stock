@@ -9,8 +9,10 @@ const KPIS_SUGERIDOR = [
   // ── Scoring ──
   { key: 'score_FINAL_adj',          label: '🏆 Score Fundamental' },
   { key: 'score_valuation',          label: '💰 Score Valuación' },
+  { key: 'score_deep_value',         label: '🔍 Score Deep Value' },
   { key: 'score_profitability',      label: '📈 Score Rentabilidad' },
-  { key: 'score_momentum',           label: '⚡ Score Momentum' },
+  { key: 'score_momentum_calidad',   label: '⚡ Score Momentum Calidad' },
+
   // ── Riesgo ──
   { key: 'sharpe_ratio',             label: '📊 Sharpe Ratio' },
   { key: 'sortino_ratio',            label: '🛡 Sortino Ratio' },
