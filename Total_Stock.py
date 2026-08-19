@@ -346,6 +346,38 @@ df["position52w"]    = (
     (df["fiftyTwoWeekHigh"] - df["fiftyTwoWeekLow"])
 ).clip(0, 1)
 
+# ── NUEVO: RSI 14 dias y drawdown actual, calculados aqui para poder
+# usarlos en el scoring principal (antes solo vivian en el archivo avanzado) ──
+def calcular_rsi_14(serie_precios):
+    delta   = serie_precios.diff().dropna()
+    ganan   = delta.clip(lower=0)
+    pierden = (-delta).clip(lower=0)
+    avg_g   = ganan.ewm(alpha=1/14, min_periods=14).mean()
+    avg_p   = pierden.ewm(alpha=1/14, min_periods=14).mean()
+    rs      = avg_g / avg_p.replace(0, np.nan)
+    rsi     = 100 - (100 / (1 + rs))
+    return float(rsi.iloc[-1]) if len(rsi) > 0 else np.nan
+
+rsi_dict       = {}
+drawdown_dict  = {}
+for t in prices.columns:
+    serie_t = prices[t].dropna()
+    if len(serie_t) < 15:
+        rsi_dict[t]      = np.nan
+        drawdown_dict[t] = np.nan
+        continue
+    rsi_dict[t] = calcular_rsi_14(serie_t)
+    rolling_max      = serie_t.cummax()
+    drawdown_dict[t] = float(((serie_t - rolling_max) / rolling_max).iloc[-1])
+
+df["rsi_14"]            = df["ticker"].map(rsi_dict)
+df["current_drawdown"]  = df["ticker"].map(drawdown_dict)
+
+# Distancia a zona "sana" de RSI (45-65). Cerca de 0 = ni sobrecomprado ni sobrevendido.
+# Lejos de 0 en RSI alto = sobrecompra (riesgo de reversion bajista).
+# Lejos de 0 en RSI bajo = caida fuerte (cuchillo cayendo, no necesariamente rebote).
+df["rsi_distancia_zona_sana"] = (df["rsi_14"] - 55).abs()
+
 # ─────────────────────────────────────────────
 # 9. FILTRO DE LIQUIDEZ POR MARKET CAP (sin cambios)
 # ─────────────────────────────────────────────
@@ -353,6 +385,39 @@ df["liquidity_flag"] = df["marketCap"] < MICROCAP_THRESHOLD
 n_microcap           = df["liquidity_flag"].sum()
 if n_microcap > 0:
     print(f"\n⚠  {n_microcap} microcaps detectados (< $300M) — penalización aplicada.")
+
+# ── NUEVO: metricas de valor profundo (deep value), calculadas aqui para
+# poder integrarlas al scoring principal. Reusan info_completo, sin red nueva ──
+def calcular_deep_value(ticker, info, precio_actual):
+    fila = {}
+    market_cap = info.get("marketCap")
+    fcf        = info.get("freeCashflow")
+    fila["fcf_yield"] = fcf / market_cap if (fcf and market_cap and market_cap > 0) else np.nan
+
+    eps      = info.get("trailingEps")
+    book_val = info.get("bookValue")
+    if eps and book_val and eps > 0 and book_val > 0 and precio_actual and precio_actual > 0:
+        graham = (22.5 * eps * book_val) ** 0.5
+        fila["graham_margin_of_safety"] = (graham / precio_actual) - 1
+    else:
+        fila["graham_margin_of_safety"] = np.nan
+
+    target_mean = info.get("targetMeanPrice")
+    if target_mean and precio_actual and precio_actual > 0:
+        fila["analyst_upside"] = (target_mean / precio_actual) - 1
+    else:
+        fila["analyst_upside"] = np.nan
+    return fila
+
+deep_value_rows = {}
+for t in data.keys():
+    info_t   = info_completo.get(t, {})
+    precio_t = last_price[t] if t in last_price.index else np.nan
+    deep_value_rows[t] = calcular_deep_value(t, info_t, precio_t)
+
+df_deep_value = pd.DataFrame.from_dict(deep_value_rows, orient="index").reset_index()
+df_deep_value.rename(columns={"index": "ticker"}, inplace=True)
+df = df.merge(df_deep_value, on="ticker", how="left")
 
 # ─────────────────────────────────────────────
 # 10. KPIs HISTÓRICOS AMPLIADOS (sin cambios respecto al script original)
@@ -430,6 +495,29 @@ if os.path.exists(HISTORICAL_FILE):
             df_fund_hist[_col] = to_numeric_safe(df_fund_hist[_col])
     df_fund_hist = df_fund_hist.sort_values(["ticker", "report_date"])
     df_fund_hist = df_fund_hist.groupby("ticker").tail(8)   # últimos 8 trimestres
+    
+    # ── NUEVO: percentil de valuation actual vs la propia historia del ticker ──
+    # Un PE "razonable vs sector" puede seguir estando caro/barato vs su propio
+    # rango historico. Esto captura eso, algo que el scoring por sector no ve.
+    def percentil_vs_historia_propia(group, col):
+        serie = group[col].dropna()
+        if len(serie) < 4:
+            return np.nan
+        valor_actual = serie.iloc[-1]
+        return (serie < valor_actual).mean()  # 0 = mas barato de su historia, 1 = mas caro
+
+    valuation_hist_results = {}
+    for ticker, group in df_fund_hist.groupby("ticker"):
+        fila_val = {}
+        for col in ["trailingPE", "priceToBook", "enterpriseToEbitda"]:
+            if col in group.columns:
+                fila_val[f"{col}_vs_historia"] = percentil_vs_historia_propia(group, col)
+            else:
+                fila_val[f"{col}_vs_historia"] = np.nan
+        valuation_hist_results[ticker] = fila_val
+
+    df_valuation_hist = pd.DataFrame.from_dict(valuation_hist_results, orient="index").reset_index()
+    df_valuation_hist.rename(columns={"index": "ticker"}, inplace=True)
 
 
     trend_results = {}
@@ -460,13 +548,17 @@ if os.path.exists(HISTORICAL_FILE):
         if col != "ticker":
             df_trends[col] = pd.to_numeric(df_trends[col], errors="coerce")
 
+    
     df     = df.merge(df_trends, on="ticker", how="left")
+    df     = df.merge(df_valuation_hist, on="ticker", how="left")   # NUEVO
     n_hist = df_trends.drop(columns="ticker").notna().any(axis=1).sum()
     print(f"\n📈 KPIs históricos calculados para {n_hist} tickers "
           f"({len(HIST_METRICS) * 5 + 1} KPIs por ticker).")
 else:
     for kpi in all_trend_kpis:
         df[kpi] = np.nan
+    for kpi in ["trailingPE_vs_historia", "priceToBook_vs_historia", "enterpriseToEbitda_vs_historia"]:
+        df[kpi] = np.nan   # NUEVO
     print("\n⚠  Sin histórico aún — KPIs de evolución en NaN.")
 
 # ─────────────────────────────────────────────
@@ -495,36 +587,42 @@ def impute(df, col):
 # ─────────────────────────────────────────────
 # 12. SCORING CONFIG (sin cambios: no tocamos el modelo de scoring existente)
 # ─────────────────────────────────────────────
+
 CONFIG = {
     "valuation": {
         "trailingPE":         (True,  0.25),
         "forwardPE":          (True,  0.25),
         "priceToBook":        (True,  0.25),
         "enterpriseToEbitda": (True,  0.25),
-        "weight": 0.16
+        "weight": 0.14
+    },
+    "deep_value": {
+        "graham_margin_of_safety": (False, 0.35),
+        "fcf_yield":                (False, 0.35),
+        "trailingPE_vs_historia":   (True,  0.30),
+        "weight": 0.12
     },
     "profitability": {
         "returnOnEquity":   (False, 0.4),
         "profitMargins":    (False, 0.3),
         "operatingMargins": (False, 0.3),
-        "weight": 0.16
+        "weight": 0.15
     },
     "growth": {
         "revenueGrowth":  (False, 0.5),
         "earningsGrowth": (False, 0.5),
-        "weight": 0.12
+        "weight": 0.10
     },
     "financial": {
         "debtToEquity": (True,  0.5),
         "currentRatio": (False, 0.5),
         "weight": 0.12
     },
-    "momentum": {
-        "priceVs50dMA":   (False, 0.30),
-        "priceVs200dMA":  (False, 0.30),
-        "priceVs52wHigh": (False, 0.20),
-        "position52w":    (False, 0.20),
-        "weight": 0.14
+    "momentum_calidad": {
+        "priceVs200dMA":          (False, 0.35),
+        "rsi_distancia_zona_sana": (True,  0.35),
+        "current_drawdown":        (False, 0.30),
+        "weight": 0.13
     },
     "fundamental_momentum": {
         "revenue_trend":  (False, 0.15),
@@ -540,7 +638,7 @@ CONFIG = {
         "revenue_accel":  (False, 0.04),
         "margin_accel":   (False, 0.03),
         "earnings_consistency": (False, 0.00),
-        "weight": 0.24
+        "weight": 0.18
     },
     "income": {
         "dividendYield": (False, 1.00),
@@ -660,6 +758,10 @@ output_cols = [
     "lastPrice", "priceVs50dMA", "priceVs200dMA",
     "priceVs52wHigh", "priceVs52wLow", "position52w",
     "beta", "marketCap", "dividendYield", "liquidity_flag",
+    "score_deep_value", "score_momentum_calidad",
+    "graham_margin_of_safety", "fcf_yield", "analyst_upside",
+    "trailingPE_vs_historia", "priceToBook_vs_historia",
+    "rsi_14", "current_drawdown",
     "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
     "returnOnEquity", "profitMargins", "operatingMargins",
     "revenueGrowth", "earningsGrowth",
