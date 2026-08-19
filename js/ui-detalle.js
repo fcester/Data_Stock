@@ -176,7 +176,7 @@ function renderBadgeTendenciaSemanal_(info) {
       </div>
     </div>
   `;
-
+}
 
 
 function pintarDetalle_(ticker) {
