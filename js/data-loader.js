@@ -1,7 +1,8 @@
 
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
-const BASE_URL = 'https://raw.githubusercontent.com/fcester/Data_Stock/main/';
+
+const BASE_URL = 'https://cdn.jsdelivr.net/gh/fcester/Data_Stock@main/';
 
 
 let dbInstance = null;
