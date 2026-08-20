@@ -31,3 +31,15 @@ jobs:
           message: "📈 Actualización automática"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Purgar cache de jsDelivr (para que la web app vea los datos nuevos ya mismo)
+        run: |
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Actual_Stock.parquet
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Stock_Screener_PRO.csv
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Stock_Screener_History.parquet
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Stock_Advanced_Metrics.parquet
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/stock_fundamentals_history.parquet
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Sector_Industry_Trends.parquet
+          curl -s https://purge.jsdelivr.net/gh/fcester/Data_Stock@main/Tickers.csv
+          echo "✅ Cache de jsDelivr purgado para todos los archivos de datos"
+
